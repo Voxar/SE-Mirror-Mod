@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netframework48</TargetFramework>
+    <RootNamespace>MirrorCameraMod</RootNamespace>
+    <!-- csproj filename = "MirrorCamera" → MDK2 deploys to Mods/MirrorCamera (the
+         user-facing mod folder). AssemblyName pinned to "MirrorCameraMod" so the
+         compiled DLL is MirrorCameraMod.dll — the plugin's reflection lookup
+         Type.GetType("MirrorCameraMod.PanelRegistry, MirrorCameraMod") finds it
+         by short assembly name regardless of containing folder. -->
+    <AssemblyName>MirrorCameraMod</AssemblyName>
+    <LangVersion>6</LangVersion>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Configurations>Release;Debug</Configurations>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Mal.Mdk2.ModAnalyzers" Version="2.1.15">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Mal.Mdk2.ModPackager" Version="2.2.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Mal.Mdk2.References" Version="2.2.8">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <AdditionalFiles Include="Content\*\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </AdditionalFiles>
+    <AdditionalFiles Include="thumb.png" Condition="Exists('thumb.png')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </AdditionalFiles>
+    <AdditionalFiles Remove="Content\*\**\*.cs" />
+    <AdditionalFiles Remove="Content\Other content folders" />
+    <AdditionalFiles Remove="Content\Data\SBC files can go here" />
+    <None Remove="thumb.png" />
+  </ItemGroup>
+</Project>
