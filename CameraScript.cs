@@ -114,6 +114,10 @@ namespace MirrorCameraMod
         public override void Run()
         {
             base.Run();
+            // Listbox edits write straight to mod-storage without firing
+            // IsWorkingChanged / PropertiesChanged, so re-sync each tick to
+            // refresh m_title and the PanelRegistry entry on selection.
+            try { SyncRegistration(); } catch { }
             try { DrawStub(); } catch { }
         }
 

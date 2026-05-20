@@ -90,6 +90,13 @@ namespace MirrorCameraMod
         public override void Run()
         {
             base.Run();
+            // The Range slider writes mod-storage directly and never fires
+            // IsWorkingChanged or PropertiesChanged, so the PanelRegistry's
+            // cached MaxViewDistance would stay at whatever was captured at
+            // construction time forever. Re-sync each Update10 so slider
+            // edits propagate to the plugin within ~166ms. Same fix that's
+            // in CameraScript.Run.
+            try { SyncRegistration(); } catch { }
             try { DrawStub(); } catch { /* swallow — next tick gets a fresh chance */ }
         }
 
