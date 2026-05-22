@@ -13,7 +13,7 @@ namespace MirrorCameraMod
     /// = Mirror, no camera, range from MirrorSession's stored slider
     /// value) and the splash title.
     /// </summary>
-    [MyTextSurfaceScript("MirrorPanel.voxar", "Mirror")]
+    [MyTextSurfaceScript(MirrorSession.MirrorScriptId, "Mirror")]
     public class MirrorScript : PanelTss
     {
         public MirrorScript(IMyTextSurface surface, IMyCubeBlock block, Vector2 size)

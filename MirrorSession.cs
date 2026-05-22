@@ -22,8 +22,8 @@ namespace Mirror
         // Matches the guid in Content/Data/EntityComponents.sbc — must stay in sync
         // or the per-panel camera selection won't persist across world save/reload.
         public static readonly Guid StorageGuid = new Guid("63e4c22f-37b6-4c26-a486-6abd634fc504");
-        public const string MirrorScriptId = "Mirror";
-        public const string CameraScriptId = "Camera";
+        public const string MirrorScriptId = "Mirror.voxar";
+        public const string CameraScriptId = "Camera.voxar";
         const string ControlId = "Mirror.CameraSource";
 
         // Channel for paint requests sent from mod TSS to the helper.

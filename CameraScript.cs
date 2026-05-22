@@ -22,7 +22,7 @@ namespace MirrorCameraMod
     /// so the splash subtitle reads "Camera offline" instead of the
     /// plugin status.</para>
     /// </summary>
-    [MyTextSurfaceScript("CameraPanel.voxar", "Camera")]
+    [MyTextSurfaceScript(MirrorSession.CameraScriptId, "Camera")]
     public class CameraScript : PanelTss
     {
         bool   m_sourceOk;          // last sync saw a working source camera
