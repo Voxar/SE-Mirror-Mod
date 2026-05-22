@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Sandbox.ModAPI;
@@ -35,16 +36,22 @@ namespace MirrorCameraMod
             public float MaxViewDistance;
         }
 
-        struct Key
+        // IEquatable<Key> so the dictionary's lookup path stays on the
+        // generic equality comparer and never boxes the struct.
+        struct Key : IEquatable<Key>
         {
             public long BlockId;
-            public int SurfaceIdx;
-            public override int GetHashCode() => (int)(BlockId * 17 + SurfaceIdx);
-            public override bool Equals(object o) {
+            public int  SurfaceIdx;
+
+            public bool Equals(Key other)
+                => BlockId == other.BlockId && SurfaceIdx == other.SurfaceIdx;
+
+            public override bool Equals(object o)
+            {
                 if (!(o is Key)) return false;
-                var k = (Key)o;
-                return k.BlockId == BlockId && k.SurfaceIdx == SurfaceIdx;
+                return Equals((Key)o);
             }
+            public override int GetHashCode() => (int)(BlockId * 17 + SurfaceIdx);
         }
 
         // Sim-thread-only working set. SE mod scripts run on the sim thread, so

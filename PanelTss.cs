@@ -1,5 +1,4 @@
 using Sandbox.Game.GameSystems.TextSurfaceScripts;
-using System;
 using VRage.Game.GUI.TextPanel;
 using VRage.Game.ModAPI;
 using VRageMath;
@@ -8,7 +7,6 @@ using IMyCubeBlock           = VRage.Game.ModAPI.Ingame.IMyCubeBlock;
 using IMyTextSurfaceProvider = Sandbox.ModAPI.Ingame.IMyTextSurfaceProvider;
 using IMyTerminalBlock       = Sandbox.ModAPI.IMyTerminalBlock;
 using IMyFunctionalBlock     = Sandbox.ModAPI.IMyFunctionalBlock;
-using IMyEntity              = VRage.Game.ModAPI.Ingame.IMyEntity;
 
 namespace MirrorCameraMod
 {
@@ -36,6 +34,14 @@ namespace MirrorCameraMod
     /// <para>The base also caches the surface index, since enumerating
     /// the block's surfaces to find which slot <c>m_surface</c> sits in
     /// is the same lookup for every subclass.</para>
+    ///
+    /// <para><b>Inherited <see cref="MyTSSCommon"/> fields used here:</b>
+    /// <c>m_block</c> (the cube block hosting this surface),
+    /// <c>m_surface</c> (the text surface this script writes to),
+    /// <c>m_size</c> / <c>m_halfSize</c> / <c>m_scale</c> (sprite
+    /// layout helpers), <c>m_foregroundColor</c> (theme colour for
+    /// title/subtitle text). All come from the base ctor and stay
+    /// stable for the script's lifetime.</para>
     /// </summary>
     public abstract class PanelTss : MyTSSCommon
     {
