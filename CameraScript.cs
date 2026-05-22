@@ -24,8 +24,8 @@ namespace MirrorCameraMod
     [MyTextSurfaceScript(MirrorSession.CameraScriptId, "Camera")]
     public class CameraScript : PanelTss
     {
-        bool   m_sourceOk;          // last sync saw a working source camera
-        string m_title = "Camera";  // last sync's resolved camera CustomName
+        IMyCameraBlock m_cameraBlock;       // last sync's resolved camera (null when offline)
+        string         m_title = "Camera";  // last sync's resolved camera CustomName
 
         public CameraScript(IMyTextSurface surface, IMyCubeBlock block, Vector2 size)
             : base(surface, block, size) { }
@@ -33,26 +33,26 @@ namespace MirrorCameraMod
         protected override string Title => m_title;
 
         protected override string Subtitle
-            => !m_sourceOk ? "Camera offline" : base.Subtitle;
+            => m_cameraBlock == null ? "Camera offline" : base.Subtitle;
 
         protected override bool TryBuildRegistration(out PanelRegistration reg)
         {
             reg = default(PanelRegistration);
 
             // Always refresh drawing state, even when we'll fail the
-            // gate — the subtitle needs m_sourceOk regardless of whether
-            // we register.
-            long camId; float zoom; float range; string title;
-            bool srcOk = ResolveCameraState(out camId, out zoom, out range, out title);
-            m_sourceOk = srcOk;
-            m_title    = title;
+            // gate — the subtitle needs m_cameraBlock / m_title
+            // regardless of whether we register.
+            float zoom; float range; string title;
+            var cam = ResolveCameraState(out zoom, out range, out title);
+            m_cameraBlock = cam;
+            m_title       = title;
 
-            if (!IsBlockGoodState() || !srcOk) return false;
+            if (!IsBlockGoodState() || cam == null) return false;
 
             reg = new PanelRegistration
             {
                 Mode            = PanelRegistry.PanelMode.Camera,
-                CameraId        = camId,
+                CameraBlock     = cam as IMyCubeBlock,
                 Zoom            = zoom,
                 MaxViewDistance = range,
             };
@@ -62,35 +62,37 @@ namespace MirrorCameraMod
         /// <summary>
         /// Reads current camera selection / zoom / range from
         /// <see cref="MirrorSession"/>'s per-entity storage. Returns
-        /// true when a camera is selected AND its block is working.
+        /// the resolved <see cref="IMyCameraBlock"/> when a camera is
+        /// selected AND its block is working; <c>null</c> otherwise.
         /// </summary>
-        bool ResolveCameraState(out long camId, out float zoom,
-                                out float range, out string title)
+        IMyCameraBlock ResolveCameraState(out float zoom, out float range, out string title)
         {
-            camId = 0; zoom = 1f; range = MirrorSession.DefaultRange; title = "Camera";
+            zoom = 1f; range = MirrorSession.DefaultRange; title = "Camera";
 
             int idx = ResolveSurfaceIdx();
             var entity = m_block as IMyEntity;
-            if (entity == null) return false;
+            if (entity == null) return null;
 
             // Effective id (stored if set, else first camera on grid) so
             // a freshly-selected Camera app renders without the user
             // having to open the listbox and pick.
-            camId = MirrorSession.GetEffectiveCameraId(entity, idx);
+            long camId = MirrorSession.GetEffectiveCameraId(entity, idx);
             zoom  = MirrorSession.GetSelectedZoom(entity, idx);
             range = MirrorSession.GetSelectedRange(entity, idx);
-            if (camId == 0L) return false;
+            if (camId == 0L) return null;
 
             IMyEntity camEnt;
             if (!MyAPIGateway.Entities.TryGetEntityById(camId, out camEnt))
-                return false;
+                return null;
 
             var cam = camEnt as IMyCameraBlock;
-            if (cam != null && !string.IsNullOrEmpty(cam.CustomName))
-                title = cam.CustomName;
+            if (cam == null) return null;
+            if (!string.IsNullOrEmpty(cam.CustomName)) title = cam.CustomName;
 
-            var src = camEnt as Sandbox.ModAPI.IMyFunctionalBlock;
-            return src != null && src.IsWorking;
+            var func = camEnt as Sandbox.ModAPI.IMyFunctionalBlock;
+            if (func == null || !func.IsWorking) return null;
+
+            return cam;
         }
     }
 }

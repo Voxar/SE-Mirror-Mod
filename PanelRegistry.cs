@@ -20,20 +20,29 @@ namespace MirrorCameraMod
         /// Contract version exposed to MirrorCameraPlugin. Bumped on
         /// breaking changes to PanelInfo, EnumeratePanels, or the
         /// Add/Update/Remove surface. Non-breaking additions don't bump.
+        ///
+        /// <para>v2 (current): <c>CameraEntityId</c> replaced by
+        /// <c>CameraBlock</c> reference. The mod already holds the block
+        /// from its listbox population; passing the reference through
+        /// the registry means the plugin never has to do a per-frame
+        /// <c>MyEntities.TryGetEntityById</c> that might transiently
+        /// miss during entity table swaps.</para>
         /// </summary>
-        public const int ApiVersion = 1;
+        public const int ApiVersion = 2;
 
         public enum PanelMode { Mirror = 0, Camera = 1 }
 
         public struct PanelInfo
         {
             public IMyTextSurface Surface;
-            public IMyCubeBlock Block;
-            public int SurfaceIdx;
-            public PanelMode Mode;
-            public long CameraEntityId;  // 0 for Mirror mode
-            public float Zoom;            // 1.0 for Mirror mode
-            public float MaxViewDistance;
+            public IMyCubeBlock   Block;
+            public int            SurfaceIdx;
+            public PanelMode      Mode;
+            /// <summary>Camera block to render the view of.
+            /// <c>null</c> for Mirror mode.</summary>
+            public IMyCubeBlock   CameraBlock;
+            public float          Zoom;            // 1.0 for Mirror mode
+            public float          MaxViewDistance;
         }
 
         // IEquatable<Key> so the dictionary's lookup path stays on the
@@ -76,13 +85,19 @@ namespace MirrorCameraMod
             new ConcurrentDictionary<Key, string>();
 
         public static void AddOrUpdate(IMyCubeBlock block, int surfaceIdx,
-            IMyTextSurface surface, PanelMode mode, long cameraId, float zoom, float maxViewDistance)
+            IMyTextSurface surface, PanelMode mode,
+            IMyCubeBlock cameraBlock, float zoom, float maxViewDistance)
         {
             if (block == null || surface == null) return;
             var k = new Key { BlockId = block.EntityId, SurfaceIdx = surfaceIdx };
             s_panels[k] = new PanelInfo {
-                Surface = surface, Block = block, SurfaceIdx = surfaceIdx,
-                Mode = mode, CameraEntityId = cameraId, Zoom = zoom, MaxViewDistance = maxViewDistance };
+                Surface         = surface,
+                Block           = block,
+                SurfaceIdx      = surfaceIdx,
+                Mode            = mode,
+                CameraBlock     = cameraBlock,
+                Zoom            = zoom,
+                MaxViewDistance = maxViewDistance };
             RebuildSnapshot();
         }
 

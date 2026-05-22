@@ -34,7 +34,7 @@ namespace MirrorCameraMod
             reg = new PanelRegistration
             {
                 Mode            = PanelRegistry.PanelMode.Mirror,
-                CameraId        = 0L,
+                CameraBlock     = null,
                 Zoom            = 1f,
                 MaxViewDistance = range,
             };

@@ -174,7 +174,7 @@ namespace MirrorCameraMod
             {
                 PanelRegistry.AddOrUpdate(
                     m_block, ResolveSurfaceIdx(), m_surface,
-                    reg.Mode, reg.CameraId, reg.Zoom, reg.MaxViewDistance);
+                    reg.Mode, reg.CameraBlock, reg.Zoom, reg.MaxViewDistance);
                 m_isRegistered = true;
             }
             else if (m_isRegistered)
@@ -251,7 +251,9 @@ namespace MirrorCameraMod
     public struct PanelRegistration
     {
         public PanelRegistry.PanelMode Mode;
-        public long  CameraId;        // 0 for non-camera modes
+        /// <summary>Camera block to render the view of. <c>null</c> for
+        /// Mirror mode (the renderer uses the LCD's own plane).</summary>
+        public IMyCubeBlock CameraBlock;
         public float Zoom;            // 1 for non-camera modes
         public float MaxViewDistance;
     }
