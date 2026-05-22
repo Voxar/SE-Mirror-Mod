@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Sandbox.ModAPI;
 using IMyCubeBlock = VRage.Game.ModAPI.Ingame.IMyCubeBlock;
@@ -58,6 +59,15 @@ namespace MirrorCameraMod
         // on a reference-type field provides the same memory-ordering guarantee.)
         static volatile PanelInfo[] s_snapshot = new PanelInfo[0];
 
+        // Per-panel status string written by the plugin (render thread) and
+        // read by mod TSS scripts (sim thread). Kept OUT of PanelInfo so the
+        // panel snapshot stays sim-thread-only; status is the one piece of
+        // state that legitimately crosses threads, so it gets its own thread-
+        // safe container. ConcurrentDictionary's lock-free read path is what
+        // the mod TSS uses on every Run() tick — needs to be cheap.
+        static readonly ConcurrentDictionary<Key, string> s_status =
+            new ConcurrentDictionary<Key, string>();
+
         public static void AddOrUpdate(IMyCubeBlock block, int surfaceIdx,
             IMyTextSurface surface, PanelMode mode, long cameraId, float zoom, float maxViewDistance)
         {
@@ -72,8 +82,49 @@ namespace MirrorCameraMod
         public static void Remove(IMyCubeBlock block, int surfaceIdx)
         {
             if (block == null) return;
-            s_panels.Remove(new Key { BlockId = block.EntityId, SurfaceIdx = surfaceIdx });
+            var k = new Key { BlockId = block.EntityId, SurfaceIdx = surfaceIdx };
+            s_panels.Remove(k);
+            // Clear any plugin status for the panel — leaving it would
+            // surface a stale "rendered" / "failed" on the next time the
+            // same key registers (e.g. block rebuild).
+            string ignore;
+            s_status.TryRemove(k, out ignore);
             RebuildSnapshot();
+        }
+
+        /// <summary>
+        /// Plugin-side status writer. Called from the render thread to
+        /// signal what's happening to a panel (panel found, last render
+        /// success/failure, etc.). Mod TSS scripts read this back via
+        /// <see cref="GetStatus"/> and show it as the panel's subtitle.
+        /// <para>Pass <c>null</c> for status to clear an entry.</para>
+        /// </summary>
+        public static void SetStatus(long blockId, int surfaceIdx, string status)
+        {
+            var k = new Key { BlockId = blockId, SurfaceIdx = surfaceIdx };
+            if (status == null)
+            {
+                string ignore;
+                s_status.TryRemove(k, out ignore);
+            }
+            else
+            {
+                s_status[k] = status;
+            }
+        }
+
+        /// <summary>
+        /// Sim-thread side status reader. Mod TSS scripts call this each
+        /// Run() tick to pick a subtitle. Returns <c>null</c> when no
+        /// status has been written (e.g. plugin not loaded, or panel just
+        /// registered and not yet processed by the plugin).
+        /// </summary>
+        public static string GetStatus(IMyCubeBlock block, int surfaceIdx)
+        {
+            if (block == null) return null;
+            var k = new Key { BlockId = block.EntityId, SurfaceIdx = surfaceIdx };
+            string s;
+            return s_status.TryGetValue(k, out s) ? s : null;
         }
 
         static void RebuildSnapshot()
