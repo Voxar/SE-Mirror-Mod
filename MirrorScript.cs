@@ -1,6 +1,5 @@
 using Sandbox.Game.GameSystems.TextSurfaceScripts;
 using VRageMath;
-using Mirror;                          // MirrorSession lives in this namespace (will migrate in Phase 1.4)
 using IMyTextSurface = Sandbox.ModAPI.Ingame.IMyTextSurface;
 using IMyCubeBlock   = VRage.Game.ModAPI.Ingame.IMyCubeBlock;
 

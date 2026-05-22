@@ -2,7 +2,6 @@ using Sandbox.Game.GameSystems.TextSurfaceScripts;
 using Sandbox.ModAPI;
 using VRage.ModAPI;
 using VRageMath;
-using Mirror;                          // MirrorSession lives here (migrates in Phase 1.4)
 using IMyTextSurface = Sandbox.ModAPI.Ingame.IMyTextSurface;
 using IMyCubeBlock   = VRage.Game.ModAPI.Ingame.IMyCubeBlock;
 using IMyCameraBlock = Sandbox.ModAPI.IMyCameraBlock;
