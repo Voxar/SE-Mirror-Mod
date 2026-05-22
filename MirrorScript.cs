@@ -1,138 +1,45 @@
 using Sandbox.Game.GameSystems.TextSurfaceScripts;
-using Sandbox.ModAPI;
-using System;
-using VRage.Game.GUI.TextPanel;
-using VRage.Game.ModAPI;
 using VRageMath;
 using Mirror;                          // MirrorSession lives in this namespace (will migrate in Phase 1.4)
 using IMyTextSurface = Sandbox.ModAPI.Ingame.IMyTextSurface;
-using IMyCubeBlock = VRage.Game.ModAPI.Ingame.IMyCubeBlock;
-using IMyTextSurfaceProvider = Sandbox.ModAPI.Ingame.IMyTextSurfaceProvider;
-using IMyTerminalBlock = Sandbox.ModAPI.IMyTerminalBlock;
+using IMyCubeBlock   = VRage.Game.ModAPI.Ingame.IMyCubeBlock;
 
 namespace MirrorCameraMod
 {
-    [MyTextSurfaceScript("Mirror", "Mirror")]
-    public class MirrorScript : MyTSSCommon
+    /// <summary>
+    /// LCD app that registers its surface as a Mirror panel. All the
+    /// lifecycle plumbing lives on <see cref="PanelTss"/>; this class
+    /// just supplies the mirror-specific registration arguments (mode
+    /// = Mirror, no camera, range from MirrorSession's stored slider
+    /// value) and the splash title.
+    /// </summary>
+    [MyTextSurfaceScript("MirrorPanel.voxar", "Mirror")]
+    public class MirrorScript : PanelTss
     {
-        public override ScriptUpdate NeedsUpdate => ScriptUpdate.Update10;
-
-        int m_surfaceIdx = -1;
-        bool m_isRegistered;
-
         public MirrorScript(IMyTextSurface surface, IMyCubeBlock block, Vector2 size)
-            : base(surface, block, size)
-        {
-            HookEvents();
-            SyncRegistration();
-        }
+            : base(surface, block, size) { }
 
-        void HookEvents()
-        {
-            var func = m_block as Sandbox.ModAPI.IMyFunctionalBlock;
-            if (func != null) func.IsWorkingChanged += OnIsWorkingChanged;
-            var term = m_block as IMyTerminalBlock;
-            if (term != null) term.PropertiesChanged += OnPropertiesChanged;
-        }
+        protected override string Title => "Mirror";
 
-        void UnhookEvents()
+        protected override bool TryBuildRegistration(out PanelRegistration reg)
         {
-            var func = m_block as Sandbox.ModAPI.IMyFunctionalBlock;
-            if (func != null) func.IsWorkingChanged -= OnIsWorkingChanged;
-            var term = m_block as IMyTerminalBlock;
-            if (term != null) term.PropertiesChanged -= OnPropertiesChanged;
-        }
+            reg = default(PanelRegistration);
+            if (!IsBlockGoodState()) return false;
 
-        void OnIsWorkingChanged(IMyCubeBlock _) { SyncRegistration(); }
-        void OnPropertiesChanged(IMyTerminalBlock _) { SyncRegistration(); }
+            int idx = ResolveSurfaceIdx();
+            var entity = m_block as VRage.ModAPI.IMyEntity;
+            float range = entity != null
+                ? MirrorSession.GetSelectedRange(entity, idx)
+                : MirrorSession.DefaultRange;
 
-        int ResolveSurfaceIdx()
-        {
-            if (m_surfaceIdx >= 0) return m_surfaceIdx;
-            var provider = m_block as IMyTextSurfaceProvider;
-            if (provider == null) return 0;
-            for (int i = 0; i < provider.SurfaceCount; i++)
-                if (object.ReferenceEquals(provider.GetSurface(i), m_surface))
-                    return m_surfaceIdx = i;
-            return m_surfaceIdx = 0;
-        }
-
-        bool IsGoodState()
-        {
-            if (m_block == null || m_surface == null) return false;
-            var cube = m_block as IMyCubeBlock;
-            if (cube == null || !cube.IsFunctional) return false;
-            var func = m_block as Sandbox.ModAPI.IMyFunctionalBlock;
-            if (func != null && !func.IsWorking) return false;
+            reg = new PanelRegistration
+            {
+                Mode            = PanelRegistry.PanelMode.Mirror,
+                CameraId        = 0L,
+                Zoom            = 1f,
+                MaxViewDistance = range,
+            };
             return true;
-        }
-
-        void SyncRegistration()
-        {
-            bool good = IsGoodState();
-            if (good)
-            {
-                int idx = ResolveSurfaceIdx();
-                float range = (m_block is VRage.ModAPI.IMyEntity)
-                    ? MirrorSession.GetSelectedRange((VRage.ModAPI.IMyEntity)m_block, idx)
-                    : MirrorSession.DefaultRange;
-                PanelRegistry.AddOrUpdate(m_block, idx, m_surface,
-                    PanelRegistry.PanelMode.Mirror, cameraId: 0L, zoom: 1f, maxViewDistance: range);
-                m_isRegistered = true;
-            }
-            else if (m_isRegistered)
-            {
-                PanelRegistry.Remove(m_block, ResolveSurfaceIdx());
-                m_isRegistered = false;
-            }
-        }
-
-        public override void Run()
-        {
-            base.Run();
-            // The Range slider writes mod-storage directly and never fires
-            // IsWorkingChanged or PropertiesChanged, so the PanelRegistry's
-            // cached MaxViewDistance would stay at whatever was captured at
-            // construction time forever. Re-sync each Update10 so slider
-            // edits propagate to the plugin within ~166ms. Same fix that's
-            // in CameraScript.Run.
-            try { SyncRegistration(); } catch { }
-            try { DrawStub(); } catch { /* swallow — next tick gets a fresh chance */ }
-        }
-
-        void DrawStub()
-        {
-            // Subtitle: plugin's latest status if it's reporting,
-            // else "Plugin not loaded" so the panel signals visibly
-            // that the plugin half of the stack isn't running.
-            string subtitle = PanelRegistry.GetStatus(m_block, ResolveSurfaceIdx())
-                              ?? "Plugin not loaded";
-            using (var frame = m_surface.DrawFrame())
-            {
-                frame.Add(new MySprite(SpriteType.TEXTURE, "SquareSimple",
-                    m_halfSize, m_size, new Color(10, 10, 15)));
-                frame.Add(new MySprite(SpriteType.TEXT, "Mirror",
-                    m_halfSize - new Vector2(0, 22f * m_scale.Y),
-                    null, m_foregroundColor, "White", TextAlignment.CENTER, 1.2f * m_scale.Y));
-                frame.Add(new MySprite(SpriteType.TEXT, subtitle,
-                    m_halfSize + new Vector2(0, 8f * m_scale.Y),
-                    null, new Color(m_foregroundColor, 0.5f), "White", TextAlignment.CENTER, 0.7f * m_scale.Y));
-            }
-        }
-
-        public override void Dispose()
-        {
-            try
-            {
-                if (m_isRegistered && m_block != null)
-                {
-                    PanelRegistry.Remove(m_block, ResolveSurfaceIdx());
-                    m_isRegistered = false;
-                }
-                UnhookEvents();
-            }
-            catch { /* Dispose must not throw or SE leaks the surface */ }
-            base.Dispose();
         }
     }
 }
