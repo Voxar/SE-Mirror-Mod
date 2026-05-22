@@ -102,6 +102,11 @@ namespace MirrorCameraMod
 
         void DrawStub()
         {
+            // Subtitle: plugin's latest status if it's reporting,
+            // else "Plugin not loaded" so the panel signals visibly
+            // that the plugin half of the stack isn't running.
+            string subtitle = PanelRegistry.GetStatus(m_block, ResolveSurfaceIdx())
+                              ?? "Plugin not loaded";
             using (var frame = m_surface.DrawFrame())
             {
                 frame.Add(new MySprite(SpriteType.TEXTURE, "SquareSimple",
@@ -109,7 +114,7 @@ namespace MirrorCameraMod
                 frame.Add(new MySprite(SpriteType.TEXT, "Mirror",
                     m_halfSize - new Vector2(0, 22f * m_scale.Y),
                     null, m_foregroundColor, "White", TextAlignment.CENTER, 1.2f * m_scale.Y));
-                frame.Add(new MySprite(SpriteType.TEXT, "Plugin not loaded",
+                frame.Add(new MySprite(SpriteType.TEXT, subtitle,
                     m_halfSize + new Vector2(0, 8f * m_scale.Y),
                     null, new Color(m_foregroundColor, 0.5f), "White", TextAlignment.CENTER, 0.7f * m_scale.Y));
             }

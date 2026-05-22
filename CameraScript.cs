@@ -123,7 +123,18 @@ namespace MirrorCameraMod
 
         void DrawStub()
         {
-            string subtitle = m_sourceOk ? "Plugin not loaded" : "Camera offline";
+            // Subtitle precedence:
+            //   1. Camera offline — mod-side fact, takes priority because
+            //      the panel won't be registered with the plugin at all
+            //      while the source camera is offline.
+            //   2. Plugin status — what the plugin most recently reported
+            //      for this panel (found / rendered / failed: <reason>).
+            //   3. "Plugin not loaded" — no status written, plugin half
+            //      of the stack isn't running.
+            string subtitle = !m_sourceOk
+                ? "Camera offline"
+                : (PanelRegistry.GetStatus(m_block, ResolveSurfaceIdx())
+                   ?? "Plugin not loaded");
             using (var frame = m_surface.DrawFrame())
             {
                 frame.Add(new MySprite(SpriteType.TEXTURE, "SquareSimple",
