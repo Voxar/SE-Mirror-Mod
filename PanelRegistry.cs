@@ -28,7 +28,7 @@ namespace MirrorCameraMod
         /// <c>MyEntities.TryGetEntityById</c> that might transiently
         /// miss during entity table swaps.</para>
         /// </summary>
-        public const int ApiVersion = 2;
+        public const int ApiVersion = 3;
 
         public enum PanelMode { Mirror = 0, Camera = 1 }
 
@@ -42,7 +42,6 @@ namespace MirrorCameraMod
             /// <c>null</c> for Mirror mode.</summary>
             public IMyCubeBlock   CameraBlock;
             public float          Zoom;            // 1.0 for Mirror mode
-            public float          MaxViewDistance;
         }
 
         // IEquatable<Key> so the dictionary's lookup path stays on the
@@ -86,18 +85,17 @@ namespace MirrorCameraMod
 
         public static void AddOrUpdate(IMyCubeBlock block, int surfaceIdx,
             IMyTextSurface surface, PanelMode mode,
-            IMyCubeBlock cameraBlock, float zoom, float maxViewDistance)
+            IMyCubeBlock cameraBlock, float zoom)
         {
             if (block == null || surface == null) return;
             var k = new Key { BlockId = block.EntityId, SurfaceIdx = surfaceIdx };
             s_panels[k] = new PanelInfo {
-                Surface         = surface,
-                Block           = block,
-                SurfaceIdx      = surfaceIdx,
-                Mode            = mode,
-                CameraBlock     = cameraBlock,
-                Zoom            = zoom,
-                MaxViewDistance = maxViewDistance };
+                Surface     = surface,
+                Block       = block,
+                SurfaceIdx  = surfaceIdx,
+                Mode        = mode,
+                CameraBlock = cameraBlock,
+                Zoom        = zoom };
             RebuildSnapshot();
         }
 

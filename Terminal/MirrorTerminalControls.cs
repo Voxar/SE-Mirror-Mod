@@ -48,7 +48,6 @@ namespace MirrorCameraMod.Terminal
         // the standard LCD Panels listbox.
         IMyTerminalControlListbox _listbox;
         IMyTerminalControlSlider  _zoomSlider;
-        IMyTerminalControlSlider  _rangeSlider;
 
         public void Hook()
         {
@@ -63,7 +62,6 @@ namespace MirrorCameraMod.Terminal
             MyAPIGateway.TerminalControls.CustomControlGetter -= OnCustomControlGetter;
             _listbox = null;
             _zoomSlider = null;
-            _rangeSlider = null;
             _hooked = false;
         }
 
@@ -79,12 +77,10 @@ namespace MirrorCameraMod.Terminal
 
             if (_listbox     == null) _listbox     = CreateListbox();
             if (_zoomSlider  == null) _zoomSlider  = CreateZoomSlider();
-            if (_rangeSlider == null) _rangeSlider = CreateRangeSlider();
 
             int insertAt = FindInsertionIndex(controls);
             controls.Insert(insertAt,     _listbox);
             controls.Insert(insertAt + 1, _zoomSlider);
-            controls.Insert(insertAt + 2, _rangeSlider);
         }
 
         static int FindInsertionIndex(List<IMyTerminalControl> controls)
@@ -158,29 +154,6 @@ namespace MirrorCameraMod.Terminal
             sl.Visible = b =>
                 IsScriptActive(b, MirrorSession.CameraScriptId)
                 && Settings.MirrorStorage.GetCameraId(b, ActiveSurfaceIndex(b)) != 0L;
-            sl.Enabled = b => true;
-            return sl;
-        }
-
-        IMyTerminalControlSlider CreateRangeSlider()
-        {
-            var sl = MyAPIGateway.TerminalControls
-                .CreateControl<IMyTerminalControlSlider, IMyTerminalBlock>(ControlId + ".Range");
-            sl.Title   = MyStringId.GetOrCompute("Render Range");
-            sl.Tooltip = MyStringId.GetOrCompute(
-                "Stops rendering this screen when the player is farther than this from it (meters). " +
-                "Lower values save GPU time at long distances when the screen is unreadable anyway.");
-            sl.SetLimits(Settings.SurfaceSettings.MinRange, Settings.SurfaceSettings.MaxRange);
-            sl.Getter = b => Settings.MirrorStorage.GetRange(b, ActiveSurfaceIndex(b));
-            sl.Setter = (b, v) => Settings.MirrorStorage.SetRange(b, ActiveSurfaceIndex(b), v);
-            sl.Writer = (b, sb) =>
-            {
-                float v = Settings.MirrorStorage.GetRange(b, ActiveSurfaceIndex(b));
-                sb.Append(((int)Math.Round(v)).ToString(CultureInfo.InvariantCulture)).Append('m');
-            };
-            // Range applies to both Mirror and Camera scripts — both
-            // benefit from a long-distance cutoff.
-            sl.Visible = b => IsAnyMirrorScriptActive(b);
             sl.Enabled = b => true;
             return sl;
         }

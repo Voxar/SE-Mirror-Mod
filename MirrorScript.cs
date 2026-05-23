@@ -25,18 +25,11 @@ namespace MirrorCameraMod
             reg = default(PanelRegistration);
             if (!IsBlockGoodState()) return false;
 
-            int idx = ResolveSurfaceIdx();
-            var entity = m_block as VRage.ModAPI.IMyEntity;
-            float range = entity != null
-                ? MirrorSession.GetSelectedRange(entity, idx)
-                : MirrorSession.DefaultRange;
-
             reg = new PanelRegistration
             {
-                Mode            = PanelRegistry.PanelMode.Mirror,
-                CameraBlock     = null,
-                Zoom            = 1f,
-                MaxViewDistance = range,
+                Mode        = PanelRegistry.PanelMode.Mirror,
+                CameraBlock = null,
+                Zoom        = 1f,
             };
             return true;
         }

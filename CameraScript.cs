@@ -5,6 +5,7 @@ using VRageMath;
 using IMyTextSurface = Sandbox.ModAPI.Ingame.IMyTextSurface;
 using IMyCubeBlock   = VRage.Game.ModAPI.Ingame.IMyCubeBlock;
 using IMyCameraBlock = Sandbox.ModAPI.IMyCameraBlock;
+using Sandbox.Game.Entities;
 
 namespace MirrorCameraMod
 {
@@ -42,8 +43,8 @@ namespace MirrorCameraMod
             // Always refresh drawing state, even when we'll fail the
             // gate — the subtitle needs m_cameraBlock / m_title
             // regardless of whether we register.
-            float zoom; float range; string title;
-            var cam = ResolveCameraState(out zoom, out range, out title);
+            float zoom; string title;
+            var cam = ResolveCameraState(out zoom, out title);
             m_cameraBlock = cam;
             m_title       = title;
 
@@ -51,23 +52,22 @@ namespace MirrorCameraMod
 
             reg = new PanelRegistration
             {
-                Mode            = PanelRegistry.PanelMode.Camera,
-                CameraBlock     = cam as IMyCubeBlock,
-                Zoom            = zoom,
-                MaxViewDistance = range,
+                Mode        = PanelRegistry.PanelMode.Camera,
+                CameraBlock = cam as IMyCubeBlock,
+                Zoom        = zoom,
             };
             return true;
         }
 
         /// <summary>
-        /// Reads current camera selection / zoom / range from
+        /// Reads current camera selection / zoom from
         /// <see cref="MirrorSession"/>'s per-entity storage. Returns
         /// the resolved <see cref="IMyCameraBlock"/> when a camera is
         /// selected AND its block is working; <c>null</c> otherwise.
         /// </summary>
-        IMyCameraBlock ResolveCameraState(out float zoom, out float range, out string title)
+        IMyCameraBlock ResolveCameraState(out float zoom, out string title)
         {
-            zoom = 1f; range = MirrorSession.DefaultRange; title = "Camera";
+            zoom = 1f; title = "Camera";
 
             int idx = ResolveSurfaceIdx();
             var entity = m_block as IMyEntity;
@@ -78,7 +78,6 @@ namespace MirrorCameraMod
             // having to open the listbox and pick.
             long camId = MirrorSession.GetEffectiveCameraId(entity, idx);
             zoom  = MirrorSession.GetSelectedZoom(entity, idx);
-            range = MirrorSession.GetSelectedRange(entity, idx);
             if (camId == 0L) return null;
 
             IMyEntity camEnt;
