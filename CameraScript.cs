@@ -5,7 +5,6 @@ using VRageMath;
 using IMyTextSurface = Sandbox.ModAPI.Ingame.IMyTextSurface;
 using IMyCubeBlock   = VRage.Game.ModAPI.Ingame.IMyCubeBlock;
 using IMyCameraBlock = Sandbox.ModAPI.IMyCameraBlock;
-using Sandbox.Game.Entities;
 
 namespace MirrorCameraMod
 {
