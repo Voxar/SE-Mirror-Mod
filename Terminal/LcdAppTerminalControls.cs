@@ -192,16 +192,17 @@ namespace MirrorCameraMod.Terminal
                 .CreateControl<IMyTerminalControlSlider, IMyTerminalBlock>(id);
             sl.Title   = MyStringId.GetOrCompute(title);
             sl.Tooltip = MyStringId.GetOrCompute(tip);
-            // Static range at the absolute hard limit. The Func-based
-            // SetLimits overload caused ctrl+click "set value" to stop
-            // applying on the second slider after the first one's
-            // dialog had been used in the same terminal session — SE's
-            // shared dialog state appears to lose the binding when
-            // two controls swap dynamic getters in. The plugin still
-            // clamps the effective angle to MirrorMaxTiltDeg at render
-            // time, so the cap is enforced regardless of the UI range.
-            sl.SetLimits(Settings.SurfaceSettings.MinMirrorAngleDeg,
-                         Settings.SurfaceSettings.MaxMirrorAngleDeg);
+            // Range tracks the plugin's current MirrorMaxTiltDeg cap
+            // (= PanelRegistry.MirrorMaxTiltDeg, pushed by the plugin
+            // on each sync). When the plugin isn't loaded or hasn't
+            // pushed a value yet, this falls back to the absolute
+            // ±MaxMirrorAngleDeg default set on the registry. Per-block
+            // getters because the dynamic-SetLimits overload signature
+            // requires per-block functions, even though the value is
+            // global.
+            sl.SetLimits(
+                _ => -PanelRegistry.MirrorMaxTiltDeg,
+                _ => +PanelRegistry.MirrorMaxTiltDeg);
 
             sl.Getter = b => yaw
                 ? Settings.MirrorStorage.GetMirrorAngleX(b, ActiveSurfaceIndex(b))
