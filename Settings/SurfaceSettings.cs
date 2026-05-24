@@ -17,10 +17,10 @@ namespace MirrorCameraMod.Settings
     public struct SurfaceSettings
     {
         // Camera zoom range — slider goes 1.0× (no zoom) up to MaxZoom.
-        // FOV is divided by zoom: at 8× the FOV is one-eighth of the
-        // configured camera FOV, giving a strong telephoto.
+        // FOV is divided by zoom: at 20× the FOV is one-twentieth of
+        // the configured camera FOV, giving a very strong telephoto.
         public const float MinZoom = 1.0f;
-        public const float MaxZoom = 15.0f;
+        public const float MaxZoom = 20.0f;
 
         // Per-surface render-range slider. Helper skips the panel render
         // when the main-view camera is farther than this from the LCD.
