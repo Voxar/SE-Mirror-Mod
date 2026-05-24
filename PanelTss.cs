@@ -174,7 +174,8 @@ namespace MirrorCameraMod
             {
                 PanelRegistry.AddOrUpdate(
                     m_block, ResolveSurfaceIdx(), m_surface,
-                    reg.Mode, reg.CameraBlock, reg.Zoom);
+                    reg.Mode, reg.CameraBlock, reg.Zoom,
+                    reg.MirrorAngleDegX, reg.MirrorAngleDegY);
                 m_isRegistered = true;
             }
             else if (m_isRegistered)
@@ -255,5 +256,13 @@ namespace MirrorCameraMod
         /// Mirror mode (the renderer uses the LCD's own plane).</summary>
         public IMyCubeBlock CameraBlock;
         public float Zoom;            // 1 for non-camera modes
+        /// <summary>Mirror mode: yaw applied to the screen plane normal
+        /// before reflection (degrees, positive = toward screen Right).
+        /// 0 for non-mirror modes.</summary>
+        public float MirrorAngleDegX;
+        /// <summary>Mirror mode: pitch applied to the screen plane
+        /// normal before reflection (degrees, positive = toward screen
+        /// Up). 0 for non-mirror modes.</summary>
+        public float MirrorAngleDegY;
     }
 }

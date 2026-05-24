@@ -76,6 +76,32 @@ namespace MirrorCameraMod.Settings
             WriteAll(entity, map);
         }
 
+        public static float GetMirrorAngleX(IMyEntity entity, int surfaceIdx)
+            => SurfaceSettings.ClampMirrorAngle(GetEntry(entity, surfaceIdx).MirrorAngleDegX);
+
+        public static void SetMirrorAngleX(IMyEntity entity, int surfaceIdx, float deg)
+        {
+            var map = ReadAll(entity);
+            SurfaceSettings cur;
+            if (!map.TryGetValue(surfaceIdx, out cur)) cur = SurfaceSettings.Defaults;
+            cur.MirrorAngleDegX = SurfaceSettings.ClampMirrorAngle(deg);
+            map[surfaceIdx] = cur;
+            WriteAll(entity, map);
+        }
+
+        public static float GetMirrorAngleY(IMyEntity entity, int surfaceIdx)
+            => SurfaceSettings.ClampMirrorAngle(GetEntry(entity, surfaceIdx).MirrorAngleDegY);
+
+        public static void SetMirrorAngleY(IMyEntity entity, int surfaceIdx, float deg)
+        {
+            var map = ReadAll(entity);
+            SurfaceSettings cur;
+            if (!map.TryGetValue(surfaceIdx, out cur)) cur = SurfaceSettings.Defaults;
+            cur.MirrorAngleDegY = SurfaceSettings.ClampMirrorAngle(deg);
+            map[surfaceIdx] = cur;
+            WriteAll(entity, map);
+        }
+
         // ── Read / write the whole blob ─────────────────────────────────
 
         static SurfaceSettings GetEntry(IMyEntity entity, int surfaceIdx)

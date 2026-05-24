@@ -48,6 +48,8 @@ namespace MirrorCameraMod.Terminal
         // the standard LCD Panels listbox.
         IMyTerminalControlListbox _listbox;
         IMyTerminalControlSlider  _zoomSlider;
+        IMyTerminalControlSlider  _mirrorYawSlider;
+        IMyTerminalControlSlider  _mirrorPitchSlider;
 
         public void Hook()
         {
@@ -62,6 +64,8 @@ namespace MirrorCameraMod.Terminal
             MyAPIGateway.TerminalControls.CustomControlGetter -= OnCustomControlGetter;
             _listbox = null;
             _zoomSlider = null;
+            _mirrorYawSlider = null;
+            _mirrorPitchSlider = null;
             _hooked = false;
         }
 
@@ -75,12 +79,16 @@ namespace MirrorCameraMod.Terminal
             var provider = block as IMyTextSurfaceProvider;
             if (provider == null || provider.SurfaceCount <= 0) return;
 
-            if (_listbox     == null) _listbox     = CreateListbox();
-            if (_zoomSlider  == null) _zoomSlider  = CreateZoomSlider();
+            if (_listbox            == null) _listbox            = CreateListbox();
+            if (_zoomSlider         == null) _zoomSlider         = CreateZoomSlider();
+            if (_mirrorYawSlider    == null) _mirrorYawSlider    = CreateMirrorAngleSlider(yaw: true);
+            if (_mirrorPitchSlider  == null) _mirrorPitchSlider  = CreateMirrorAngleSlider(yaw: false);
 
             int insertAt = FindInsertionIndex(controls);
             controls.Insert(insertAt,     _listbox);
             controls.Insert(insertAt + 1, _zoomSlider);
+            controls.Insert(insertAt + 2, _mirrorYawSlider);
+            controls.Insert(insertAt + 3, _mirrorPitchSlider);
         }
 
         static int FindInsertionIndex(List<IMyTerminalControl> controls)
@@ -154,6 +162,50 @@ namespace MirrorCameraMod.Terminal
             sl.Visible = b =>
                 IsScriptActive(b, MirrorSession.CameraScriptId)
                 && Settings.MirrorStorage.GetCameraId(b, ActiveSurfaceIndex(b)) != 0L;
+            sl.Enabled = b => true;
+            return sl;
+        }
+
+        // Both mirror-angle sliders share the same shape: identical
+        // limits, identical formatting, only the axis (yaw vs pitch)
+        // and getter/setter target differ. One factory keeps the visible
+        // diff to the two function pointers.
+        IMyTerminalControlSlider CreateMirrorAngleSlider(bool yaw)
+        {
+            var id    = ControlId + (yaw ? ".MirrorYaw"   : ".MirrorPitch");
+            var title = yaw ? "Mirror Yaw"   : "Mirror Pitch";
+            var tip   = yaw
+                ? "Tilt the mirror's reflection LEFT/RIGHT around the screen's vertical axis. " +
+                  "Use to aim a rear-view or side-view mirror at the angle you want without re-mounting the LCD block."
+                : "Tilt the mirror's reflection UP/DOWN around the screen's horizontal axis. " +
+                  "Use to adjust what vertical slice of the world the mirror shows.";
+
+            var sl = MyAPIGateway.TerminalControls
+                .CreateControl<IMyTerminalControlSlider, IMyTerminalBlock>(id);
+            sl.Title   = MyStringId.GetOrCompute(title);
+            sl.Tooltip = MyStringId.GetOrCompute(tip);
+            sl.SetLimits(Settings.SurfaceSettings.MinMirrorAngleDeg,
+                         Settings.SurfaceSettings.MaxMirrorAngleDeg);
+
+            sl.Getter = b => yaw
+                ? Settings.MirrorStorage.GetMirrorAngleX(b, ActiveSurfaceIndex(b))
+                : Settings.MirrorStorage.GetMirrorAngleY(b, ActiveSurfaceIndex(b));
+            sl.Setter = (b, v) =>
+            {
+                int idx = ActiveSurfaceIndex(b);
+                if (yaw) Settings.MirrorStorage.SetMirrorAngleX(b, idx, v);
+                else     Settings.MirrorStorage.SetMirrorAngleY(b, idx, v);
+            };
+            sl.Writer = (b, sb) =>
+            {
+                float v = yaw
+                    ? Settings.MirrorStorage.GetMirrorAngleX(b, ActiveSurfaceIndex(b))
+                    : Settings.MirrorStorage.GetMirrorAngleY(b, ActiveSurfaceIndex(b));
+                sb.Append(v.ToString("+0.#;-0.#;0", CultureInfo.InvariantCulture)).Append('°');
+            };
+            // Mirror angles only relevant in Mirror mode. Camera mode
+            // uses the camera block's orientation directly.
+            sl.Visible = b => IsScriptActive(b, MirrorSession.MirrorScriptId);
             sl.Enabled = b => true;
             return sl;
         }

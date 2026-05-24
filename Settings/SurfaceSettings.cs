@@ -31,20 +31,34 @@ namespace MirrorCameraMod.Settings
         public const float MaxRange     = 500f;
         public const float DefaultRange = 40f;
 
+        // Mirror-only: per-surface yaw / pitch tilt applied to the
+        // screen plane's normal before reflection. Lets the player aim a
+        // rear-view / side-view mirror to see what they need without
+        // re-mounting the LCD block. Range chosen wide enough to cover
+        // typical vehicle-mirror angles without inviting the player to
+        // point the mirror at the wall behind it.
+        public const float MinMirrorAngleDeg = -45f;
+        public const float MaxMirrorAngleDeg = +45f;
+
         public long  CameraId;
         public float Zoom;
         public float Range;
+        public float MirrorAngleDegX;   // yaw   — tilt around screen Up
+        public float MirrorAngleDegY;   // pitch — tilt around screen Right
 
         /// <summary>True when this surface holds the implicit default
         /// state. Storage prunes default-state surfaces so an unused
         /// surface doesn't bloat the serialized blob.</summary>
         public bool IsDefault
             => CameraId == 0L
-            && Math.Abs(Zoom - 1.0f) < 0.001f
-            && Math.Abs(Range - DefaultRange) < 0.001f;
+            && Math.Abs(Zoom  - 1.0f)         < 0.001f
+            && Math.Abs(Range - DefaultRange) < 0.001f
+            && Math.Abs(MirrorAngleDegX)      < 0.01f
+            && Math.Abs(MirrorAngleDegY)      < 0.01f;
 
         public static SurfaceSettings Defaults =>
-            new SurfaceSettings { CameraId = 0L, Zoom = 1.0f, Range = DefaultRange };
+            new SurfaceSettings { CameraId = 0L, Zoom = 1.0f, Range = DefaultRange,
+                                  MirrorAngleDegX = 0f, MirrorAngleDegY = 0f };
 
         public static float ClampZoom(float v)
             => v < MinZoom ? MinZoom : (v > MaxZoom ? MaxZoom : v);
@@ -52,11 +66,15 @@ namespace MirrorCameraMod.Settings
         public static float ClampRange(float v)
             => v < MinRange ? MinRange : (v > MaxRange ? MaxRange : v);
 
+        public static float ClampMirrorAngle(float v)
+            => v < MinMirrorAngleDeg ? MinMirrorAngleDeg
+             : (v > MaxMirrorAngleDeg ? MaxMirrorAngleDeg : v);
+
         /// <summary>
-        /// Parse one surface entry: <c>camId[*zoom[*range]]</c>. Tokens
-        /// are positional and optional from right to left. Missing
+        /// Parse one surface entry: <c>camId[*zoom[*range[*angX[*angY]]]]</c>.
+        /// Tokens are positional and optional from right to left. Missing
         /// trailing tokens use the defaults so older format versions
-        /// (zoom-less or range-less) still load cleanly.
+        /// (angle-less, range-less, zoom-less) still load cleanly.
         /// </summary>
         public static SurfaceSettings Parse(string entry)
         {
@@ -79,26 +97,52 @@ namespace MirrorCameraMod.Settings
                 if (float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out rg))
                     r.Range = ClampRange(rg);
             }
+            if (parts.Length >= 4)
+            {
+                float ax;
+                if (float.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out ax))
+                    r.MirrorAngleDegX = ClampMirrorAngle(ax);
+            }
+            if (parts.Length >= 5)
+            {
+                float ay;
+                if (float.TryParse(parts[4], NumberStyles.Float, CultureInfo.InvariantCulture, out ay))
+                    r.MirrorAngleDegY = ClampMirrorAngle(ay);
+            }
             return r;
         }
 
         /// <summary>
         /// Serialize a surface entry. Omits trailing tokens whose value
         /// matches the default so the blob stays compact when only the
-        /// camera id is non-default. A range token requires a preceding
-        /// zoom token (positional), so when range diverges we always
-        /// emit zoom too.
+        /// camera id is non-default. Tokens are positional, so an angle
+        /// token requires every preceding token (zoom, range) to also be
+        /// emitted; we re-emit defaults for those in that case.
         /// </summary>
         public string Format()
         {
             var camStr = CameraId.ToString(CultureInfo.InvariantCulture);
-            bool zoomDefault  = Math.Abs(Zoom  - 1.0f)         < 0.001f;
-            bool rangeDefault = Math.Abs(Range - DefaultRange) < 0.001f;
-            if (zoomDefault && rangeDefault) return camStr;
-            var zoomStr = Zoom.ToString("0.###", CultureInfo.InvariantCulture);
-            if (rangeDefault) return camStr + "*" + zoomStr;
-            return camStr + "*" + zoomStr
-                + "*" + ((int)Math.Round(Range)).ToString(CultureInfo.InvariantCulture);
+            bool zoomDefault   = Math.Abs(Zoom  - 1.0f)         < 0.001f;
+            bool rangeDefault  = Math.Abs(Range - DefaultRange) < 0.001f;
+            bool angleXDefault = Math.Abs(MirrorAngleDegX)      < 0.01f;
+            bool angleYDefault = Math.Abs(MirrorAngleDegY)      < 0.01f;
+
+            if (zoomDefault && rangeDefault && angleXDefault && angleYDefault) return camStr;
+
+            var zoomStr  = Zoom.ToString("0.###", CultureInfo.InvariantCulture);
+            if (rangeDefault && angleXDefault && angleYDefault)
+                return camStr + "*" + zoomStr;
+
+            var rangeStr = ((int)Math.Round(Range)).ToString(CultureInfo.InvariantCulture);
+            if (angleXDefault && angleYDefault)
+                return camStr + "*" + zoomStr + "*" + rangeStr;
+
+            var angleXStr = MirrorAngleDegX.ToString("0.#", CultureInfo.InvariantCulture);
+            if (angleYDefault)
+                return camStr + "*" + zoomStr + "*" + rangeStr + "*" + angleXStr;
+
+            var angleYStr = MirrorAngleDegY.ToString("0.#", CultureInfo.InvariantCulture);
+            return camStr + "*" + zoomStr + "*" + rangeStr + "*" + angleXStr + "*" + angleYStr;
         }
     }
 }
