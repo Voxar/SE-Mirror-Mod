@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text;
 using Sandbox.Game.EntityComponents;
 using Sandbox.ModAPI;
 using Sandbox.ModAPI.Interfaces.Terminal;
@@ -12,13 +13,15 @@ using IMyTextSurfaceProvider = Sandbox.ModAPI.Ingame.IMyTextSurfaceProvider;
 namespace MirrorCameraMod.Terminal
 {
     /// <summary>
-    /// Builds and registers the three terminal controls this mod adds
-    /// to LCD-capable blocks: a "Camera Source" listbox, a "Camera
-    /// Zoom" slider, and a "Render Range" slider. One instance of each
-    /// is shared across every block; the controls dispatch per-block
-    /// via the block's currently-highlighted surface index (multi-
-    /// surface blocks track this on <see cref="MyMultiTextPanelComponent"/>;
-    /// single-surface blocks always resolve to surface 0).
+    /// Adds the terminal controls and toolbar actions for blocks
+    /// running either of this mod's two LCD apps (Mirror, Camera):
+    /// Camera Source listbox, Camera Zoom slider, Mirror Yaw / Pitch
+    /// sliders, plus an Increase / Decrease / Reset toolbar action per
+    /// slider. One instance of each control is shared across every
+    /// block; the controls dispatch per-block via the block's
+    /// currently-highlighted surface index (multi-surface blocks track
+    /// this on <see cref="MyMultiTextPanelComponent"/>; single-surface
+    /// blocks always resolve to surface 0).
     ///
     /// <para>Controls are inserted via
     /// <c>MyAPIGateway.TerminalControls.CustomControlGetter</c>, NOT
@@ -29,7 +32,7 @@ namespace MirrorCameraMod.Terminal
     /// circuits on <c>AreControlsCreated&lt;MyTextPanel&gt;()</c> and never
     /// adds the defaults — wiping the entire LCD terminal UI.</para>
     /// </summary>
-    public sealed class MirrorTerminalControls
+    public sealed class LcdAppTerminalControls
     {
         const string ControlId = "Mirror.CameraSource";
 
@@ -163,6 +166,11 @@ namespace MirrorCameraMod.Terminal
                 IsScriptActive(b, MirrorSession.CameraScriptId)
                 && Settings.MirrorStorage.GetCameraId(b, ActiveSurfaceIndex(b)) != 0L;
             sl.Enabled = b => true;
+            RegisterSliderActions(
+                ControlId + ".Zoom", "Camera Zoom", sl,
+                step: 0.5f, resetValue: 1f, format: v => v.ToString("0.0", CultureInfo.InvariantCulture) + "x",
+                visibleWhen: b => IsScriptActive(b, MirrorSession.CameraScriptId)
+                              && Settings.MirrorStorage.GetCameraId(b, ActiveSurfaceIndex(b)) != 0L);
             return sl;
         }
 
@@ -184,6 +192,14 @@ namespace MirrorCameraMod.Terminal
                 .CreateControl<IMyTerminalControlSlider, IMyTerminalBlock>(id);
             sl.Title   = MyStringId.GetOrCompute(title);
             sl.Tooltip = MyStringId.GetOrCompute(tip);
+            // Static range at the absolute hard limit. The Func-based
+            // SetLimits overload caused ctrl+click "set value" to stop
+            // applying on the second slider after the first one's
+            // dialog had been used in the same terminal session — SE's
+            // shared dialog state appears to lose the binding when
+            // two controls swap dynamic getters in. The plugin still
+            // clamps the effective angle to MirrorMaxTiltDeg at render
+            // time, so the cap is enforced regardless of the UI range.
             sl.SetLimits(Settings.SurfaceSettings.MinMirrorAngleDeg,
                          Settings.SurfaceSettings.MaxMirrorAngleDeg);
 
@@ -207,7 +223,101 @@ namespace MirrorCameraMod.Terminal
             // uses the camera block's orientation directly.
             sl.Visible = b => IsScriptActive(b, MirrorSession.MirrorScriptId);
             sl.Enabled = b => true;
+            RegisterSliderActions(
+                id, title, sl,
+                step: 5f, resetValue: 0f,
+                format: v => v.ToString("+0;-0;0", CultureInfo.InvariantCulture) + "°",
+                visibleWhen: b => IsScriptActive(b, MirrorSession.MirrorScriptId));
             return sl;
+        }
+
+        // ── Toolbar actions ────────────────────────────────────────────
+        //
+        // Right-click reset on the slider knob would normally come from
+        // the concrete MyTerminalControlSlider<TBlock>.DefaultValue
+        // property in Sandbox.Game.Gui; the mod-API surface doesn't
+        // expose it and MDK2 prohibits reflection paths
+        // (System.Reflection.BindingFlags, PropertyInfo.SetValue, ...),
+        // so the reset is exposed as a toolbar Action instead — same
+        // outcome, one click further.
+
+        // For each slider we add three toolbar-assignable actions —
+        // Increase, Decrease, and Reset — wired through
+        // <see cref="IMyTerminalControlSlider.Setter"/>/Getter so the
+        // action path goes through the same storage write as a manual
+        // slider drag. `visibleWhen` mirrors the slider's Visible
+        // predicate so the actions only enable on blocks the slider
+        // itself would show up on.
+        void RegisterSliderActions(string baseId, string baseName, IMyTerminalControlSlider sl,
+                                   float step, float resetValue,
+                                   Func<float, string> format,
+                                   Func<IMyTerminalBlock, bool> visibleWhen)
+        {
+            AddSliderAction(baseId + ".Increase", "Increase " + baseName, "Action_Increase",
+                step, sl, format, visibleWhen);
+            AddSliderAction(baseId + ".Decrease", "Decrease " + baseName, "Action_Decrease",
+                -step, sl, format, visibleWhen);
+            AddSliderResetAction(baseId + ".Reset", "Reset " + baseName, "Cancel",
+                resetValue, sl, format, visibleWhen);
+        }
+
+        void AddSliderAction(string id, string name, string icon,
+                             float delta, IMyTerminalControlSlider sl,
+                             Func<float, string> format,
+                             Func<IMyTerminalBlock, bool> visibleWhen)
+        {
+            var action = MyAPIGateway.TerminalControls
+                .CreateAction<IMyTerminalBlock>(id);
+            action.Name = new StringBuilder(name);
+            action.Icon = "Textures\\GUI\\Icons\\Actions\\" + icon + ".dds";
+            action.ValidForGroups = false;
+            action.Enabled        = visibleWhen;
+            // GetMinimum/GetMaximum live on ITerminalProperty<float>
+            // (typed on IMyCubeBlock), the slider inherits but the
+            // direct invocation on IMyTerminalControlSlider doesn't
+            // resolve — cast through that interface for the bounds.
+            var prop = (Sandbox.ModAPI.Interfaces.ITerminalProperty<float>)sl;
+            action.Action = b =>
+            {
+                if (!visibleWhen(b)) return;
+                float current = sl.Getter(b);
+                float min     = prop.GetMinimum(b);
+                float max     = prop.GetMaximum(b);
+                float next    = current + delta;
+                if (next < min) next = min;
+                if (next > max) next = max;
+                sl.Setter(b, next);
+            };
+            action.Writer = (b, sb) =>
+            {
+                if (!visibleWhen(b)) return;
+                sb.Append(format(sl.Getter(b)));
+            };
+            MyAPIGateway.TerminalControls.AddAction<IMyTerminalBlock>(action);
+        }
+
+        void AddSliderResetAction(string id, string name, string icon,
+                                  float resetValue, IMyTerminalControlSlider sl,
+                                  Func<float, string> format,
+                                  Func<IMyTerminalBlock, bool> visibleWhen)
+        {
+            var action = MyAPIGateway.TerminalControls
+                .CreateAction<IMyTerminalBlock>(id);
+            action.Name = new StringBuilder(name);
+            action.Icon = "Textures\\GUI\\Icons\\Actions\\" + icon + ".dds";
+            action.ValidForGroups = false;
+            action.Enabled        = visibleWhen;
+            action.Action = b =>
+            {
+                if (!visibleWhen(b)) return;
+                sl.Setter(b, resetValue);
+            };
+            action.Writer = (b, sb) =>
+            {
+                if (!visibleWhen(b)) return;
+                sb.Append(format(sl.Getter(b)));
+            };
+            MyAPIGateway.TerminalControls.AddAction<IMyTerminalBlock>(action);
         }
 
         // ── Helpers ────────────────────────────────────────────────────

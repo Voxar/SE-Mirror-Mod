@@ -7,19 +7,13 @@ namespace MirrorCameraMod
 {
     /// <summary>
     /// Session component: owns the lifetime of the per-block terminal
-    /// controls this mod adds (Camera Source listbox + Camera Zoom and
-    /// Render Range sliders). Hooks into SE's <c>CustomControlGetter</c>
-    /// on <see cref="LoadData"/> and unhooks on <see cref="UnloadData"/>.
-    /// All actual UI plumbing lives in <see cref="MirrorTerminalControls"/>;
+    /// controls this mod adds (Camera Source listbox + Camera Zoom,
+    /// Mirror Yaw and Mirror Pitch sliders, plus toolbar actions for
+    /// each slider). Hooks into SE's <c>CustomControlGetter</c> on
+    /// <see cref="LoadData"/> and unhooks on <see cref="UnloadData"/>.
+    /// All actual UI plumbing lives in <see cref="LcdAppTerminalControls"/>;
     /// per-surface state lives in <see cref="Settings.MirrorStorage"/>;
     /// camera enumeration lives in <see cref="CameraEnumerator"/>.
-    ///
-    /// <para>Static script-id strings + facade accessors used to live
-    /// here in a monolithic 540-line implementation. The remaining
-    /// constants here are the script ids (referenced by the TSS
-    /// attributes on <c>MirrorScript</c> / <c>CameraScript</c>) and a
-    /// thin forwarder to <see cref="CameraEnumerator.GetEffectiveCameraId"/>
-    /// for the camera resolver in the plugin to use through the bridge.</para>
     /// </summary>
     [MySessionComponentDescriptor(MyUpdateOrder.NoUpdate)]
     public class MirrorSession : MySessionComponentBase
@@ -27,7 +21,7 @@ namespace MirrorCameraMod
         public const string MirrorScriptId = "Mirror.voxar";
         public const string CameraScriptId = "Camera.voxar";
 
-        readonly MirrorTerminalControls _controls = new MirrorTerminalControls();
+        readonly LcdAppTerminalControls _controls = new LcdAppTerminalControls();
 
         public override void LoadData()    => _controls.Hook();
         protected override void UnloadData() => _controls.Unhook();
