@@ -81,12 +81,13 @@ namespace MirrorCameraMod.Terminal
 
         /// <summary>
         /// Camera id for a surface: the stored selection if non-zero,
-        /// otherwise the first available camera on the mechanical group.
+        /// otherwise the first available camera on the mechanical group
+        /// — which is also persisted to storage so the next call hits
+        /// the fast path and the per-tick <see cref="GatherCameras"/>
+        /// walk only runs once per surface (or until every camera dies).
         /// The renderer uses this so a freshly-set Camera app renders
         /// something immediately, before the user has opened the
         /// terminal to trigger <see cref="PopulateListbox"/>'s auto-pick.
-        /// Once the user opens the terminal, this returns the same
-        /// value as <see cref="MirrorStorage.GetCameraId"/>.
         /// </summary>
         public static long GetEffectiveCameraId(IMyEntity entity, int surfaceIdx)
         {
@@ -96,29 +97,43 @@ namespace MirrorCameraMod.Terminal
             var block = entity as IMyCubeBlock;
             if (block == null) return 0L;
             var cameras = GatherCameras(block);
-            return cameras.Count > 0 ? cameras[0].EntityId : 0L;
+            if (cameras.Count == 0) return 0L;
+
+            long picked = cameras[0].EntityId;
+            Settings.MirrorStorage.SetCameraId(entity, surfaceIdx, picked);
+            return picked;
         }
 
         // ── Internal ────────────────────────────────────────────────────
 
+        // Reused across all callers to keep GatherCameras allocation-free
+        // in steady state. Mod scripts run single-threaded on the sim
+        // thread, so static reuse is safe — no cross-call concurrency.
+        // Each call Clear()s before populating, so contents never leak
+        // across invocations. The returned list reference is shared:
+        // callers must consume it before the next GatherCameras call.
+        static readonly List<IMyCameraBlock> s_camerasBuf = new List<IMyCameraBlock>();
+        static readonly List<IMyCubeGrid>    s_gridsBuf   = new List<IMyCubeGrid>();
+        static readonly List<IMySlimBlock>   s_slimsBuf   = new List<IMySlimBlock>();
+
         static List<IMyCameraBlock> GatherCameras(IMyCubeBlock block)
         {
-            var cameras = new List<IMyCameraBlock>();
-            if (block == null || block.CubeGrid == null) return cameras;
+            s_camerasBuf.Clear();
+            if (block == null || block.CubeGrid == null) return s_camerasBuf;
 
-            var groups = new List<IMyCubeGrid>();
-            MyAPIGateway.GridGroups.GetGroup(block.CubeGrid, GridLinkTypeEnum.Mechanical, groups);
+            s_gridsBuf.Clear();
+            MyAPIGateway.GridGroups.GetGroup(block.CubeGrid, GridLinkTypeEnum.Mechanical, s_gridsBuf);
 
-            var slims = new List<IMySlimBlock>();
-            foreach (var g in groups)
-                g.GetBlocks(slims, b => b.FatBlock is IMyCameraBlock);
+            s_slimsBuf.Clear();
+            foreach (var g in s_gridsBuf)
+                g.GetBlocks(s_slimsBuf, b => b.FatBlock is IMyCameraBlock);
 
-            foreach (var slim in slims)
+            foreach (var slim in s_slimsBuf)
             {
                 var cam = slim.FatBlock as IMyCameraBlock;
-                if (cam != null) cameras.Add(cam);
+                if (cam != null) s_camerasBuf.Add(cam);
             }
-            return cameras;
+            return s_camerasBuf;
         }
     }
 }

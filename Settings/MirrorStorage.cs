@@ -1,177 +1,307 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.Text;
+using MirrorCameraMod.Network;
 using Sandbox.Game.EntityComponents;
+using Sandbox.ModAPI;
 using VRage.ModAPI;
+using VRage.Utils;
 
 namespace MirrorCameraMod.Settings
 {
     /// <summary>
-    /// Reads and writes per-surface <see cref="SurfaceSettings"/> on an
-    /// entity's <see cref="MyModStorageComponent"/>. The serialized blob
-    /// lives under a single GUID keyed off <see cref="StorageGuid"/> —
-    /// matches the entry in <c>Content/Data/EntityComponents.sbc</c>
-    /// (the two MUST stay in sync, or per-panel selections silently
-    /// fail to persist across save/reload).
+    /// Per-surface settings store. In-memory authoritative dict on the
+    /// server; client mirrors populated via <see cref="SettingsNetwork"/>.
+    /// Persistence is server-side: ProtoBuf-binary blob (base64-encoded)
+    /// in each block's <see cref="MyModStorageComponent"/> under
+    /// <see cref="StorageGuid"/>, so settings travel with blueprints and
+    /// survive save/reload.
     ///
-    /// <para><b>Wire format</b> (semicolon-separated surfaces, colon-
-    /// separated index:entry):</para>
-    /// <list type="bullet">
-    ///   <item>Legacy v1: a single decimal long → applies only to surface 0.</item>
-    ///   <item>v2: <c>"0:123;1:456;..."</c> (camId only).</item>
-    ///   <item>v3: <c>"0:123*2.5;1:456;..."</c> (camId*zoom).</item>
-    ///   <item>v4 (current): <c>"0:123*2.5*60;1:456;..."</c> (camId*zoom*range).</item>
-    /// </list>
-    /// <para>Writes always use v4. Older formats parse correctly because
-    /// missing trailing tokens fall through to <see cref="SurfaceSettings.Defaults"/>.</para>
+    /// <para><b>Why not just <see cref="MyModStorageComponent"/>?</b>
+    /// The storage component itself is documented "not synced" — writes
+    /// on one client never reach others. The whole reason the mod is
+    /// separate from the plugin is that the mod IS the sync layer. This
+    /// class uses the storage component for PERSISTENCE only, on the
+    /// server, and uses <see cref="SettingsNetwork"/> for replication.</para>
+    ///
+    /// <para><b>API surface (unchanged)</b>: Get* returns the current
+    /// value (clamp-safe), Set* updates the in-memory state and pushes
+    /// the change to the server (or broadcasts if we ARE the server).
+    /// Each Set also writes through to MyModStorageComponent on the
+    /// server, and notifies the local <see cref="PanelTss"/> so the
+    /// plugin sees the new value immediately on this client.</para>
     /// </summary>
     public static class MirrorStorage
     {
-        /// <summary>GUID for the storage entry. MUST match the
-        /// <c>EntityComponents.sbc</c> definition so SE serializes the
+        /// <summary>GUID for the persistence entry. MUST match the
+        /// <c>EntityComponents.sbc</c> definition so SE serialises the
         /// component to the save file. Changing this orphans every
         /// pre-existing player's saved selections.</summary>
         public static readonly Guid StorageGuid =
             new Guid("63e4c22f-37b6-4c26-a486-6abd634fc504");
 
-        // ── Per-surface accessors ───────────────────────────────────────
+        // In-memory state. Server: authoritative. Client: mirror,
+        // populated by SettingsNetwork (full-sync on join + per-edit
+        // updates from server). Key: (blockId << 4) | (surfaceIdx & 0xF).
+        static readonly Dictionary<long, SurfaceSettings> s_state =
+            new Dictionary<long, SurfaceSettings>();
 
-        public static long GetCameraId(IMyEntity entity, int surfaceIdx)
-            => GetEntry(entity, surfaceIdx).CameraId;
+        static long MakeKey(long blockId, int surfaceIdx)
+            => (blockId << 4) | (long)(surfaceIdx & 0xF);
+
+        // ── Read API ────────────────────────────────────────────────────
+
+        public static long  GetCameraId(IMyEntity entity, int surfaceIdx)
+            => Get(entity, surfaceIdx).CameraId;
+
+        public static float GetZoom(IMyEntity entity, int surfaceIdx)
+            => SurfaceSettings.ClampZoom(Get(entity, surfaceIdx).Zoom);
+
+        public static float GetRange(IMyEntity entity, int surfaceIdx)
+            => SurfaceSettings.ClampRange(Get(entity, surfaceIdx).Range);
+
+        public static float GetMirrorAngleX(IMyEntity entity, int surfaceIdx)
+            => SurfaceSettings.ClampMirrorAngle(Get(entity, surfaceIdx).MirrorAngleDegX);
+
+        public static float GetMirrorAngleY(IMyEntity entity, int surfaceIdx)
+            => SurfaceSettings.ClampMirrorAngle(Get(entity, surfaceIdx).MirrorAngleDegY);
+
+        /// <summary>Returns the current settings for the given surface.
+        /// Never null — defaults are returned if no entry exists.
+        /// Server first-touch checks the entity's storage component
+        /// (lazy load), so blocks loaded from a save populate on demand.</summary>
+        static SurfaceSettings Get(IMyEntity entity, int surfaceIdx)
+        {
+            if (entity == null) return new SurfaceSettings();
+            long key = MakeKey(entity.EntityId, surfaceIdx);
+
+            SurfaceSettings s;
+            if (s_state.TryGetValue(key, out s)) return s;
+
+            // Server: lazy-load from per-block storage if this is the
+            // first read after a save. After this all surfaces on the
+            // block are cached; subsequent reads hit the dict directly.
+            if (IsServer && TryLoadAllSurfacesFromStorage(entity))
+            {
+                if (s_state.TryGetValue(key, out s)) return s;
+            }
+            return new SurfaceSettings();
+        }
+
+        // ── Write API ───────────────────────────────────────────────────
+        //
+        // Each Set* updates the local in-memory copy, then triggers the
+        // network push (server broadcasts; client→server→broadcast).
+        // Server also writes through to MyModStorageComponent so changes
+        // persist with the save. PanelTss.NotifyStorageChanged fires
+        // locally so the plugin reading via PanelRegistry sees the new
+        // value within one sim tick — no waiting for the network round
+        // trip on the editing client.
 
         public static void SetCameraId(IMyEntity entity, int surfaceIdx, long id)
         {
-            var map = ReadAll(entity);
-            SurfaceSettings cur;
-            if (!map.TryGetValue(surfaceIdx, out cur)) cur = SurfaceSettings.Defaults;
+            var cur = TakeForMutation(entity, surfaceIdx);
+            if (cur == null) return;
             cur.CameraId = id;
-            map[surfaceIdx] = cur;
-            WriteAll(entity, map);
+            CommitAndPublish(entity, surfaceIdx, cur);
         }
-
-        public static float GetZoom(IMyEntity entity, int surfaceIdx)
-            => SurfaceSettings.ClampZoom(GetEntry(entity, surfaceIdx).Zoom);
 
         public static void SetZoom(IMyEntity entity, int surfaceIdx, float zoom)
         {
-            var map = ReadAll(entity);
-            SurfaceSettings cur;
-            if (!map.TryGetValue(surfaceIdx, out cur)) cur = SurfaceSettings.Defaults;
+            var cur = TakeForMutation(entity, surfaceIdx);
+            if (cur == null) return;
             cur.Zoom = SurfaceSettings.ClampZoom(zoom);
-            map[surfaceIdx] = cur;
-            WriteAll(entity, map);
+            CommitAndPublish(entity, surfaceIdx, cur);
         }
-
-        public static float GetRange(IMyEntity entity, int surfaceIdx)
-            => SurfaceSettings.ClampRange(GetEntry(entity, surfaceIdx).Range);
 
         public static void SetRange(IMyEntity entity, int surfaceIdx, float range)
         {
-            var map = ReadAll(entity);
-            SurfaceSettings cur;
-            if (!map.TryGetValue(surfaceIdx, out cur)) cur = SurfaceSettings.Defaults;
+            var cur = TakeForMutation(entity, surfaceIdx);
+            if (cur == null) return;
             cur.Range = SurfaceSettings.ClampRange(range);
-            map[surfaceIdx] = cur;
-            WriteAll(entity, map);
+            CommitAndPublish(entity, surfaceIdx, cur);
         }
-
-        public static float GetMirrorAngleX(IMyEntity entity, int surfaceIdx)
-            => SurfaceSettings.ClampMirrorAngle(GetEntry(entity, surfaceIdx).MirrorAngleDegX);
 
         public static void SetMirrorAngleX(IMyEntity entity, int surfaceIdx, float deg)
         {
-            var map = ReadAll(entity);
-            SurfaceSettings cur;
-            if (!map.TryGetValue(surfaceIdx, out cur)) cur = SurfaceSettings.Defaults;
+            var cur = TakeForMutation(entity, surfaceIdx);
+            if (cur == null) return;
             cur.MirrorAngleDegX = SurfaceSettings.ClampMirrorAngle(deg);
-            map[surfaceIdx] = cur;
-            WriteAll(entity, map);
+            CommitAndPublish(entity, surfaceIdx, cur);
         }
-
-        public static float GetMirrorAngleY(IMyEntity entity, int surfaceIdx)
-            => SurfaceSettings.ClampMirrorAngle(GetEntry(entity, surfaceIdx).MirrorAngleDegY);
 
         public static void SetMirrorAngleY(IMyEntity entity, int surfaceIdx, float deg)
         {
-            var map = ReadAll(entity);
-            SurfaceSettings cur;
-            if (!map.TryGetValue(surfaceIdx, out cur)) cur = SurfaceSettings.Defaults;
+            var cur = TakeForMutation(entity, surfaceIdx);
+            if (cur == null) return;
             cur.MirrorAngleDegY = SurfaceSettings.ClampMirrorAngle(deg);
-            map[surfaceIdx] = cur;
-            WriteAll(entity, map);
+            CommitAndPublish(entity, surfaceIdx, cur);
         }
 
-        // ── Read / write the whole blob ─────────────────────────────────
-
-        static SurfaceSettings GetEntry(IMyEntity entity, int surfaceIdx)
+        /// <summary>Fetch (or create) the SurfaceSettings instance for a
+        /// (block, surface), ready for in-place mutation. Returns null if
+        /// the entity is null (caller bails). On the server we also do
+        /// the lazy-load-from-storage check so the first edit after a
+        /// save merges with existing data instead of clobbering it.</summary>
+        static SurfaceSettings TakeForMutation(IMyEntity entity, int surfaceIdx)
         {
-            SurfaceSettings s;
-            return ReadAll(entity).TryGetValue(surfaceIdx, out s) ? s : SurfaceSettings.Defaults;
+            if (entity == null) return null;
+            long key = MakeKey(entity.EntityId, surfaceIdx);
+
+            SurfaceSettings cur;
+            if (s_state.TryGetValue(key, out cur)) return cur;
+
+            if (IsServer && TryLoadAllSurfacesFromStorage(entity)
+                && s_state.TryGetValue(key, out cur))
+                return cur;
+
+            // No existing state — start from defaults.
+            return new SurfaceSettings();
         }
 
-        static Dictionary<int, SurfaceSettings> ReadAll(IMyEntity entity)
+        static void CommitAndPublish(IMyEntity entity, int surfaceIdx, SurfaceSettings cur)
         {
-            var map = new Dictionary<int, SurfaceSettings>();
-            if (entity == null || entity.Storage == null) return map;
+            long key = MakeKey(entity.EntityId, surfaceIdx);
+            s_state[key] = cur;
 
-            string blob;
-            if (!entity.Storage.TryGetValue(StorageGuid, out blob) || string.IsNullOrEmpty(blob))
-                return map;
+            // Persist on server so the next world load sees the change.
+            if (IsServer) PersistToStorage(entity);
 
-            if (blob.IndexOf(':') < 0)
+            // Replicate to other peers. Server broadcasts, client sends
+            // to server (which broadcasts to everyone else).
+            SettingsNetwork.SendUpdate(entity.EntityId, surfaceIdx, cur);
+
+            // Local TSS notification — instant feedback for the user
+            // who's editing, without waiting for any network round-trip.
+            PanelTss.NotifyStorageChanged(entity.EntityId, surfaceIdx);
+        }
+
+        // ── Inbound from network ────────────────────────────────────────
+
+        /// <summary>Called by <see cref="SettingsNetwork"/> when a remote
+        /// peer's edit (or the server's full-sync) arrives. Replaces the
+        /// local entry, persists if server, and triggers the local TSS
+        /// re-sync so the plugin picks the new value up.</summary>
+        public static void ApplyRemote(long blockId, int surfaceIdx, SurfaceSettings data)
+        {
+            if (data == null) return;
+            long key = MakeKey(blockId, surfaceIdx);
+            s_state[key] = data;
+
+            if (IsServer)
             {
-                // Legacy v1: single decimal long, surface 0 only.
-                long legacy;
-                if (long.TryParse(blob, NumberStyles.Integer, CultureInfo.InvariantCulture, out legacy))
+                IMyEntity ent;
+                if (MyAPIGateway.Entities.TryGetEntityById(blockId, out ent))
+                    PersistToStorage(ent);
+            }
+
+            PanelTss.NotifyStorageChanged(blockId, surfaceIdx);
+        }
+
+        /// <summary>Snapshot of every in-memory entry, used by the server
+        /// to satisfy a client's FullSyncRequest. Allocates each call —
+        /// only invoked on player join, so cost is negligible.</summary>
+        internal static List<SurfaceEntry> SnapshotAll()
+        {
+            var list = new List<SurfaceEntry>(s_state.Count);
+            foreach (var kv in s_state)
+            {
+                list.Add(new SurfaceEntry
                 {
-                    var d = SurfaceSettings.Defaults;
-                    d.CameraId = legacy;
-                    map[0] = d;
-                }
-                return map;
+                    BlockId    = kv.Key >> 4,
+                    SurfaceIdx = (int)(kv.Key & 0xF),
+                    Settings   = kv.Value,
+                });
             }
-
-            foreach (var part in blob.Split(';'))
-            {
-                if (string.IsNullOrEmpty(part)) continue;
-                int colon = part.IndexOf(':');
-                if (colon <= 0 || colon == part.Length - 1) continue;
-                int idx;
-                if (!int.TryParse(part.Substring(0, colon),
-                        NumberStyles.Integer, CultureInfo.InvariantCulture, out idx))
-                    continue;
-                map[idx] = SurfaceSettings.Parse(part.Substring(colon + 1));
-            }
-            return map;
+            return list;
         }
 
-        static void WriteAll(IMyEntity entity, Dictionary<int, SurfaceSettings> map)
+        /// <summary>Drop all in-memory state. Called on session unload to
+        /// keep session-1 references from bleeding into session-2 — the
+        /// mod assembly can't be unloaded in .NET Framework so the
+        /// static dict is the only thing that persists between worlds.</summary>
+        public static void Clear() => s_state.Clear();
+
+        // ── Persistence (server only) ───────────────────────────────────
+
+        static bool IsServer
+            => MyAPIGateway.Multiplayer == null || MyAPIGateway.Multiplayer.IsServer;
+
+        /// <summary>Load every surface entry for this block from its
+        /// storage component into <see cref="s_state"/>. Returns true if
+        /// any entry was loaded. No-op (and false) if the block has no
+        /// storage or the blob is malformed.</summary>
+        static bool TryLoadAllSurfacesFromStorage(IMyEntity entity)
+        {
+            if (entity == null || entity.Storage == null) return false;
+            string blob;
+            if (!entity.Storage.TryGetValue(StorageGuid, out blob)
+                || string.IsNullOrEmpty(blob)) return false;
+
+            BlockSurfacesData data;
+            try
+            {
+                byte[] bytes = Convert.FromBase64String(blob);
+                data = MyAPIGateway.Utilities.SerializeFromBinary<BlockSurfacesData>(bytes);
+            }
+            catch (Exception ex)
+            {
+                MyLog.Default.WriteLine("[MirrorMod] Storage load (block " + entity.EntityId + ") failed: " + ex);
+                return false;
+            }
+            if (data == null || data.Surfaces == null || data.Surfaces.Count == 0) return false;
+
+            long blockId = entity.EntityId;
+            foreach (var entry in data.Surfaces)
+            {
+                if (entry == null || entry.Settings == null) continue;
+                s_state[MakeKey(blockId, entry.SurfaceIdx)] = entry.Settings;
+            }
+            return true;
+        }
+
+        /// <summary>Write every in-memory surface entry for this block
+        /// back to its storage component. Server-only — clients never
+        /// persist (they receive sync from the server).</summary>
+        static void PersistToStorage(IMyEntity entity)
         {
             if (entity == null) return;
 
-            // Prune default surfaces so the blob shrinks back to nothing
-            // when the user resets a panel by hand.
-            var keys = new List<int>(map.Keys);
-            foreach (var k in keys) if (map[k].IsDefault) map.Remove(k);
-
-            if (map.Count == 0)
+            try
             {
-                if (entity.Storage != null) entity.Storage.RemoveValue(StorageGuid);
-                return;
-            }
+                long blockId = entity.EntityId;
 
-            if (entity.Storage == null) entity.Storage = new MyModStorageComponent();
-            var sb = new StringBuilder();
-            bool first = true;
-            foreach (var kv in map)
-            {
-                if (!first) sb.Append(';');
-                first = false;
-                sb.Append(kv.Key.ToString(CultureInfo.InvariantCulture))
-                  .Append(':').Append(kv.Value.Format());
+                // Collect all surfaces for this block. ProtoBuf doesn't
+                // need a separate "dirty" set — we always re-serialise
+                // the full set for one block; per-block storage blobs
+                // are tiny (a few dozen bytes each).
+                var data = new BlockSurfacesData();
+                foreach (var kv in s_state)
+                {
+                    if ((kv.Key >> 4) != blockId) continue;
+                    data.Surfaces.Add(new BlockSurfaceEntry
+                    {
+                        SurfaceIdx = (int)(kv.Key & 0xF),
+                        Settings   = kv.Value,
+                    });
+                }
+
+                if (data.Surfaces.Count == 0)
+                {
+                    if (entity.Storage != null) entity.Storage.RemoveValue(StorageGuid);
+                    return;
+                }
+
+                // "Only use set accessor if value is null" — per the doc
+                // on IMyEntity.Storage.
+                if (entity.Storage == null) entity.Storage = new MyModStorageComponent();
+
+                byte[] bytes = MyAPIGateway.Utilities.SerializeToBinary(data);
+                entity.Storage[StorageGuid] = Convert.ToBase64String(bytes);
             }
-            entity.Storage[StorageGuid] = sb.ToString();
+            catch (Exception ex)
+            {
+                MyLog.Default.WriteLine("[MirrorMod] PersistToStorage (block " + entity.EntityId + ") failed: " + ex);
+            }
         }
     }
 }

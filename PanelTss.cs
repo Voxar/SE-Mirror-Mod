@@ -1,7 +1,10 @@
+using System;
+using System.Collections.Generic;
 using Sandbox.Game.GameSystems.TextSurfaceScripts;
 using Sandbox.ModAPI;
 using VRage.Game.GUI.TextPanel;
 using VRage.Game.ModAPI;
+using VRage.Utils;
 using VRageMath;
 using IMyTextSurface         = Sandbox.ModAPI.Ingame.IMyTextSurface;
 using IMyCubeBlock           = VRage.Game.ModAPI.Ingame.IMyCubeBlock;
@@ -46,7 +49,7 @@ namespace MirrorCameraMod
     /// </summary>
     public abstract class PanelTss : MyTSSCommon
     {
-        public override ScriptUpdate NeedsUpdate => ScriptUpdate.Update10;
+        public override ScriptUpdate NeedsUpdate => ScriptUpdate.Update100;
 
         // -1 = not yet resolved. Filled lazily by ResolveSurfaceIdx the
         // first time it's needed and cached for the rest of the script's
@@ -62,8 +65,59 @@ namespace MirrorCameraMod
         protected PanelTss(IMyTextSurface surface, IMyCubeBlock block, Vector2 size)
             : base(surface, block, size)
         {
+            RegisterForStorageNotify();
             HookEvents();
             SyncRegistration();
+        }
+
+        // ── Storage push notification ────────────────────────────────────
+        //
+        // MirrorStorage Set* writes don't fire any engine event, so the
+        // Update100 backstop alone would mean ~1.67s latency between a
+        // slider edit and the plugin seeing the new value. To make
+        // sliders feel snappy, MirrorStorage calls NotifyStorageChanged
+        // directly after each write, with leading-edge debounce to
+        // coalesce drag-spam. The Update100 backstop still runs, so any
+        // post-drag final value that lands in a debounce window is
+        // caught within 1.67s.
+
+        // (blockId << 4) | (surfaceIdx & 0xF) — surfaceIdx never exceeds
+        // 16 on any vanilla LCD, and packing into one long avoids the
+        // ValueTuple allocation of (long, int) dict keys.
+        static readonly Dictionary<long, PanelTss> s_byKey =
+            new Dictionary<long, PanelTss>();
+
+        static long MakeKey(long blockId, int surfaceIdx)
+            => (blockId << 4) | (long)(surfaceIdx & 0xF);
+
+        void RegisterForStorageNotify()
+        {
+            if (m_block == null) return;
+            s_byKey[MakeKey(m_block.EntityId, ResolveSurfaceIdx())] = this;
+        }
+
+        void UnregisterForStorageNotify()
+        {
+            if (m_block == null) return;
+            s_byKey.Remove(MakeKey(m_block.EntityId, ResolveSurfaceIdx()));
+        }
+
+        /// <summary>Called by <see cref="Settings.MirrorStorage"/> after
+        /// a debounced write. Looks up the matching live TSS instance
+        /// and triggers a re-sync, so the plugin sees the new slider
+        /// value within ~100ms of the user dragging instead of waiting
+        /// for the next Update100 tick.</summary>
+        public static void NotifyStorageChanged(long blockId, int surfaceIdx)
+        {
+            PanelTss tss;
+            if (s_byKey.TryGetValue(MakeKey(blockId, surfaceIdx), out tss))
+            {
+                try { tss.SyncRegistration(); }
+                catch (Exception ex)
+                {
+                    MyLog.Default.WriteLine("[MirrorMod] NotifyStorageChanged sync failed: " + ex);
+                }
+            }
         }
 
         // ── Event wiring ─────────────────────────────────────────────────
@@ -193,9 +247,19 @@ namespace MirrorCameraMod
             base.Run();
             // Re-sync each Update10 in case settings the engine doesn't
             // fire events for (range slider, camera-list selection)
-            // changed since the last sync.
-            try { SyncRegistration(); } catch { }
-            try { DrawStub(); }       catch { /* next tick gets a fresh chance */ }
+            // changed since the last sync. Exceptions log unconditionally
+            // (per CLAUDE.md log rule) — without this the panel silently
+            // stops working with no diagnosable trace.
+            try { SyncRegistration(); }
+            catch (Exception ex)
+            {
+                MyLog.Default.WriteLine("[MirrorMod] SyncRegistration failed: " + ex);
+            }
+            try { DrawStub(); }
+            catch (Exception ex)
+            {
+                MyLog.Default.WriteLine("[MirrorMod] DrawStub failed: " + ex);
+            }
         }
 
         /// <summary>Title text shown in the splash. Mirror/Camera supply
@@ -237,6 +301,7 @@ namespace MirrorCameraMod
                     PanelRegistry.Remove(m_block, ResolveSurfaceIdx());
                     m_isRegistered = false;
                 }
+                UnregisterForStorageNotify();
                 UnhookEvents();
             }
             catch { /* Dispose must not throw or SE leaks the surface */ }

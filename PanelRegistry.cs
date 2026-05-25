@@ -164,6 +164,20 @@ namespace MirrorCameraMod
             return s_status.TryGetValue(k, out s) ? s : null;
         }
 
+        /// <summary>
+        /// Drop every panel and status entry. Defensive: .NET Framework
+        /// can't unload the mod assembly between sessions, so any static
+        /// state that holds session-N entity references would carry them
+        /// into session-N+1 if a TSS failed to Dispose. Called from
+        /// <see cref="MirrorSession.UnloadData"/>.
+        /// </summary>
+        public static void Clear()
+        {
+            s_panels.Clear();
+            s_status.Clear();
+            s_snapshot = new PanelInfo[0];
+        }
+
         static void RebuildSnapshot()
         {
             var fresh = new PanelInfo[s_panels.Count];

@@ -1,3 +1,4 @@
+using MirrorCameraMod.Network;
 using MirrorCameraMod.Terminal;
 using VRage.Game.Components;
 using VRage.ModAPI;
@@ -25,8 +26,29 @@ namespace MirrorCameraMod
 
         readonly LcdAppTerminalControls _controls = new LcdAppTerminalControls();
 
-        public override void LoadData()    => _controls.Hook();
-        protected override void UnloadData() => _controls.Unhook();
+        public override void LoadData()
+        {
+            _controls.Hook();
+            SettingsNetwork.Register();
+            // Client-only: pull the server's current state. The server
+            // already has authoritative data (loaded lazily from each
+            // block's storage on first access); clients can't trust the
+            // local block storage because MyModStorageComponent isn't
+            // synced — only the server's persistence survives.
+            SettingsNetwork.RequestFullSyncIfClient();
+        }
+
+        protected override void UnloadData()
+        {
+            _controls.Unhook();
+            SettingsNetwork.Unregister();
+            // Defensive: in .NET Framework the mod assembly persists
+            // across world reloads. Drop all panel + settings state so
+            // session-N entity references can't bleed into session-N+1
+            // if any TSS failed to Dispose.
+            PanelRegistry.Clear();
+            Settings.MirrorStorage.Clear();
+        }
 
         // ── Facade for non-terminal callers ─────────────────────────────
 
