@@ -1,4 +1,6 @@
+using MirrorCameraMod.Terminal;
 using Sandbox.Game.GameSystems.TextSurfaceScripts;
+using Sandbox.ModAPI;
 using VRage.Game.GUI.TextPanel;
 using VRage.Game.ModAPI;
 using VRageMath;
@@ -63,6 +65,49 @@ namespace MirrorCameraMod
         {
             HookEvents();
             SyncRegistration();
+            RegisterTerminalControlsForHost();
+        }
+
+        // ── First-instance terminal-control registration ─────────────────
+
+        /// <summary>
+        /// First time a TSS instance is created for a particular host
+        /// block type, register that type's terminal controls /
+        /// properties / actions via
+        /// <see cref="LcdAppTerminalControls.RegisterFor{TBlock}"/>.
+        ///
+        /// <para>Done here (after base ctor + event hooks) rather than
+        /// in <c>LoadData</c> because <c>AddControl</c> at LoadData
+        /// short-circuits the block type's lazy
+        /// <c>CreateTerminalControls</c> and wipes the LCD's default
+        /// UI (Title, Content, Show on HUD…). By the time a TSS exists
+        /// for a block, that block has already gone through
+        /// <c>BeforeGameLogicInit → CreateTerminalControls</c> with
+        /// defaults populated, so AddControl just appends. See
+        /// <see cref="LcdAppTerminalControls"/> for the full rationale
+        /// and the THDigi pattern this follows.</para>
+        ///
+        /// <para>Dispatched by the host block's concrete type — each
+        /// type is its own AddControl generic instantiation and each
+        /// type's registration runs at most once.</para>
+        /// </summary>
+        void RegisterTerminalControlsForHost()
+        {
+            // Cast to the public modAPI types we know how to register
+            // for. Each branch is its own generic specialization of
+            // RegisterFor<TBlock>. Unknown block types (modded text-
+            // surface providers we haven't enumerated) simply don't get
+            // controls; harmless — the script still runs.
+            try
+            {
+                if (m_block is IMyTextPanel)
+                    LcdAppTerminalControls.RegisterFor<IMyTextPanel>();
+                else if (m_block is IMyCockpit)
+                    LcdAppTerminalControls.RegisterFor<IMyCockpit>();
+                else if (m_block is IMyProgrammableBlock)
+                    LcdAppTerminalControls.RegisterFor<IMyProgrammableBlock>();
+            }
+            catch { /* registration is best-effort; one TSS failure shouldn't break the panel */ }
         }
 
         // ── Event wiring ─────────────────────────────────────────────────
