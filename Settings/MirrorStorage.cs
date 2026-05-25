@@ -226,6 +226,18 @@ namespace MirrorCameraMod.Settings
         static bool IsServer
             => MyAPIGateway.Multiplayer == null || MyAPIGateway.Multiplayer.IsServer;
 
+                /// <summary>Server-only: eager-load this entity's persisted
+        /// surface entries into the in-memory dict. Called by
+        /// <see cref="MirrorSession"/>'s OnEntityAdd hook so the server
+        /// has a complete <see cref="SnapshotAll"/> ready to ship to any
+        /// connecting client, without having to wait for each block's
+        /// TSS to trigger a lazy load.</summary>
+        public static bool TryLoadEntity(IMyEntity entity)
+        {
+            if (!IsServer) return false;
+            return TryLoadAllSurfacesFromStorage(entity);
+        }
+
         /// <summary>Load every surface entry for this block from its
         /// storage component into <see cref="s_state"/>. Returns true if
         /// any entry was loaded. No-op (and false) if the block has no

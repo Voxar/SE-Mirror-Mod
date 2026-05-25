@@ -176,13 +176,29 @@ namespace MirrorCameraMod.Network
         static void HandleFullSyncRequest(ulong requesterSteamId)
         {
             if (!MyAPIGateway.Multiplayer.IsServer) return;
+            SendFullSyncToClient(requesterSteamId);
+        }
+
+        /// <summary>Server-only: send the complete current state to one
+        /// specific client. Used both as a reply to a client's
+        /// <see cref="NetworkMessageType.FullSyncRequest"/> AND
+        /// proactively by <see cref="MirrorSession"/> when it detects a
+        /// new player connecting (since SE's mod API doesn't expose a
+        /// player-connect event, we can't rely solely on the client's
+        /// request reaching us before its TSSes start reading state).</summary>
+        public static void SendFullSyncToClient(ulong steamId)
+        {
+            if (MyAPIGateway.Multiplayer == null) return;
+            if (!MyAPIGateway.Multiplayer.IsServer) return;
+            if (steamId == 0UL) return;
+            if (steamId == MyAPIGateway.Multiplayer.ServerId) return;  // skip self
 
             var response = new NetworkMessage
             {
                 Type    = NetworkMessageType.FullSyncResponse,
                 Entries = MirrorStorage.SnapshotAll(),
             };
-            SendToSpecificClient(response, requesterSteamId);
+            SendToSpecificClient(response, steamId);
         }
 
         static void HandleFullSyncResponse(NetworkMessage msg)
