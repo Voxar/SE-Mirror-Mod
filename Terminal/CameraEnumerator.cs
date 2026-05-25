@@ -25,18 +25,25 @@ namespace MirrorCameraMod.Terminal
     public static class CameraEnumerator
     {
         /// <summary>Fill <paramref name="items"/> with one entry per
-        /// camera and append the currently-selected item (or the first
-        /// available when nothing is stored) to <paramref name="selected"/>.
-        /// Empty list produces a single disabled "(no cameras)"
-        /// placeholder so the listbox is never visually empty.</summary>
+        /// camera and append the currently-selected item to
+        /// <paramref name="selected"/>. Empty list produces a single
+        /// disabled "(no cameras)" placeholder so the listbox is never
+        /// visually empty.
+        ///
+        /// <para>If the surface has no stored camera id but at least
+        /// one camera exists on the grid, the first camera is persisted
+        /// as the explicit pick before the items are emitted — so the
+        /// listbox's highlighted entry always matches the stored id
+        /// from the user's perspective (no "you see one highlighted
+        /// but storage thinks nothing is picked" mismatch). After this
+        /// runs once for a fresh surface, <see cref="MirrorStorage.GetCameraId"/>
+        /// always returns the same value as <see cref="GetEffectiveCameraId"/>.</para></summary>
         public static void PopulateListbox(
             IMyTerminalBlock block, int surfaceIdx,
             List<MyTerminalControlListBoxItem> items,
             List<MyTerminalControlListBoxItem> selected)
         {
             if (block == null || block.CubeGrid == null) return;
-
-            long currentId = Settings.MirrorStorage.GetCameraId(block, surfaceIdx);
 
             var cameras = GatherCameras(block);
             if (cameras.Count == 0)
@@ -49,11 +56,16 @@ namespace MirrorCameraMod.Terminal
                 return;
             }
 
-            // When the user hasn't picked yet, highlight the first
-            // camera so OnCameraSelected can default to it without
-            // mutating storage prematurely.
-            long defaultId = cameras[0].EntityId;
-            long highlight = (currentId != 0L) ? currentId : defaultId;
+            long currentId = Settings.MirrorStorage.GetCameraId(block, surfaceIdx);
+            if (currentId == 0L)
+            {
+                // Auto-pick the first camera so storage matches what
+                // the user sees highlighted. From this point on the
+                // listbox's "selected" set is always backed by the
+                // stored id rather than a fallback-only inference.
+                currentId = cameras[0].EntityId;
+                Settings.MirrorStorage.SetCameraId(block, surfaceIdx, currentId);
+            }
 
             foreach (var cam in cameras)
             {
@@ -63,16 +75,18 @@ namespace MirrorCameraMod.Terminal
                     MyStringId.GetOrCompute("Display this camera's view."),
                     cam.EntityId);
                 items.Add(item);
-                if (cam.EntityId == highlight) selected.Add(item);
+                if (cam.EntityId == currentId) selected.Add(item);
             }
         }
 
         /// <summary>
-        /// Effective camera id for a surface: the stored selection if
-        /// non-zero, otherwise the first available camera on the
-        /// mechanical group. Used by <c>CameraScript</c> so a freshly-
-        /// selected Camera app renders something instead of "Camera
-        /// offline" when the user hasn't touched the listbox yet.
+        /// Camera id for a surface: the stored selection if non-zero,
+        /// otherwise the first available camera on the mechanical group.
+        /// The renderer uses this so a freshly-set Camera app renders
+        /// something immediately, before the user has opened the
+        /// terminal to trigger <see cref="PopulateListbox"/>'s auto-pick.
+        /// Once the user opens the terminal, this returns the same
+        /// value as <see cref="MirrorStorage.GetCameraId"/>.
         /// </summary>
         public static long GetEffectiveCameraId(IMyEntity entity, int surfaceIdx)
         {

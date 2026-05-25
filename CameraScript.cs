@@ -223,9 +223,11 @@ namespace MirrorCameraMod
                 float v = MirrorStorage.GetZoom(b, LcdAppTerminalControls.ActiveSurfaceIndex(b));
                 sb.Append(v.ToString("0.0", CultureInfo.InvariantCulture)).Append('×');
             };
-            // Zoom only meaningful when a camera is picked. Listbox sets
-            // CameraId to 0 to mean "none" / Mirror; hide zoom in that
-            // state so the slider doesn't tease the user.
+            // CameraEnumerator.PopulateListbox auto-persists the first
+            // camera on first enumeration when nothing is stored, so by
+            // the time the user can see the zoom slider, GetCameraId is
+            // already non-zero whenever a camera exists. Direct check
+            // suffices — no need for the effective-id fallback here.
             sl.Visible = b => MirrorStorage.GetCameraId(b, LcdAppTerminalControls.ActiveSurfaceIndex(b)) != 0L;
             sl.Enabled = b => true;
             return sl;
