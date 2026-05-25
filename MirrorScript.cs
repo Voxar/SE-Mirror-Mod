@@ -161,11 +161,9 @@ namespace MirrorCameraMod
                 .CreateControl<IMyTerminalControlSlider, IMyTerminalBlock>(id);
             sl.Title   = MyStringId.GetOrCompute(title);
             sl.Tooltip = MyStringId.GetOrCompute(tip);
-            // Range tracks the plugin's current MirrorMaxTiltDeg cap
-            // (= PanelRegistry.MirrorMaxTiltDeg, pushed by the plugin
-            // on each sync). Per-block getters because the dynamic-
-            // SetLimits overload signature requires per-block functions,
-            // even though the value is global.
+            // Per-block getters because the dynamic-SetLimits overload
+            // signature requires per-block functions, even though the
+            // value is the same global cap for every block.
             sl.SetLimits(
                 _ => -PanelRegistry.MirrorMaxTiltDeg,
                 _ => +PanelRegistry.MirrorMaxTiltDeg);

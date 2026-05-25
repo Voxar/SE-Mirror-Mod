@@ -29,29 +29,11 @@ namespace MirrorCameraMod
         /// </summary>
         public const int ApiVersion = 4;
 
-        /// <summary>
-        /// Plugin-pushed cap on the per-LCD mirror yaw/pitch slider's
-        /// effective angle (degrees). The terminal slider's UI range
-        /// reads this dynamically so the user can only dial in values
-        /// the plugin will actually apply. Default permissive
-        /// (<see cref="SurfaceSettings.MaxMirrorAngleDeg"/>) so the
-        /// mod stays functional when the plugin isn't loaded or hasn't
-        /// pushed a value yet. Non-breaking addition: missing setter on
-        /// the plugin side just means the mod keeps the default cap.
-        /// </summary>
-        public static float MirrorMaxTiltDeg { get; private set; } = Settings.SurfaceSettings.MaxMirrorAngleDeg;
-
-        /// <summary>Plugin-side setter for <see cref="MirrorMaxTiltDeg"/>.
-        /// Bound by the plugin via reflection (same pattern as
-        /// <see cref="SetStatus"/>). Clamped to [0, MaxMirrorAngleDeg]
-        /// so a bad plugin push can't break the slider's UI.</summary>
-        public static void SetMirrorMaxTiltDeg(float deg)
-        {
-            if (deg < 0f) deg = 0f;
-            else if (deg > Settings.SurfaceSettings.MaxMirrorAngleDeg)
-                deg = Settings.SurfaceSettings.MaxMirrorAngleDeg;
-            MirrorMaxTiltDeg = deg;
-        }
+        /// <summary>Cap on the per-LCD mirror yaw/pitch slider's
+        /// effective angle (degrees). Fixed; the terminal slider's UI
+        /// range reads this so future changes have a single source of
+        /// truth.</summary>
+        public const float MirrorMaxTiltDeg = Settings.SurfaceSettings.MaxMirrorAngleDeg;
 
         public enum PanelMode { Mirror = 0, Camera = 1 }
 
