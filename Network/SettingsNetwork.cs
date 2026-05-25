@@ -82,13 +82,40 @@ namespace MirrorCameraMod.Network
 
         // ── Outbound: from MirrorStorage.Set* ─────────────────────────────
 
+        // Leading-edge debounce per (blockId, surfaceIdx). Slider drag
+        // fires Set* at ~60Hz; without this each drag would generate
+        // 60 SurfaceUpdate messages/sec per client (and the server
+        // would then broadcast each one to every other client — N×60
+        // msgs/sec). With a 100ms window we cap at ~10 msgs/sec per
+        // dragged slider. The very-final-drag-value may fall inside a
+        // suppression window; the PanelTss Update100 backstop +
+        // periodic SyncRegistration eventually re-syncs the local
+        // state, but for explicit cross-client correctness the editing
+        // client also still sees its own value instantly because Set*
+        // updates the local in-memory dict before calling SendUpdate.
+        static readonly TimeSpan SendDebounceWindow = TimeSpan.FromMilliseconds(100);
+        static readonly Dictionary<long, DateTime> s_lastSend =
+            new Dictionary<long, DateTime>();
+
+        static long MakeDebounceKey(long blockId, int surfaceIdx)
+            => (blockId << 4) | (long)(surfaceIdx & 0xF);
+
         /// <summary>Called by <see cref="MirrorStorage"/> after an edit
-        /// updates the local in-memory state. If we're the server,
-        /// broadcasts to other clients. If we're a client, sends to
-        /// server (which broadcasts on its side).</summary>
+        /// updates the local in-memory state. Leading-edge debounced
+        /// per (block, surface) to coalesce slider-drag spam. If we're
+        /// the server, broadcasts to other clients; if client, sends
+        /// to server (which broadcasts on its side).</summary>
         public static void SendUpdate(long blockId, int surfaceIdx, SurfaceSettings data)
         {
             if (MyAPIGateway.Multiplayer == null) return;  // single-player offline — no network
+
+            // Debounce gate: drop repeated sends inside the window.
+            long key = MakeDebounceKey(blockId, surfaceIdx);
+            DateTime now = DateTime.UtcNow;
+            DateTime last;
+            if (s_lastSend.TryGetValue(key, out last) && now - last < SendDebounceWindow)
+                return;
+            s_lastSend[key] = now;
 
             var msg = new NetworkMessage
             {
