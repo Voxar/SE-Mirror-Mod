@@ -242,6 +242,16 @@ namespace MirrorCameraMod
                 "SmallBlockCorner_LCD_2",
             };
 
+        // Subtypes never eligible for tilt regardless of geometry.
+        // Use for blocks whose visible projector / screen geometry
+        // can't be sensibly handled by the generic frame model.
+        private static readonly HashSet<string> NeverTiltSubtypes =
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "HoloLCDLarge",
+                "HoloLCDSmall",
+            };
+
         // Subtypes where screen-right points along block -X instead of
         // block +X. Empirically determined; the universal rule is that
         // the pitch axis is always block-local X, but the SIGN of
@@ -256,6 +266,18 @@ namespace MirrorCameraMod
                 "LargeBlockCorner_LCD_Flat_2",  // LG Corner LCD Flat Bottom
             };
 
+        // Subtypes whose mount-based screen-out rule gets the wrong
+        // axis. Transparent LCD's default mount is on the bottom face
+        // (-Y) but the screen actually faces +Z — so the standard
+        // negate-default-mount-normal rule yields +Y instead of +Z.
+        // Hardcode the screen-out direction for these.
+        private static readonly Dictionary<string, Vector3> ScreenOutOverrides =
+            new Dictionary<string, Vector3>(StringComparer.Ordinal)
+            {
+                { "TransparentLCDLarge", new Vector3(0, 0, 1) },
+                { "TransparentLCDSmall", new Vector3(0, 0, 1) },
+            };
+
         // Reused across resolves to avoid per-call allocation.
         private static readonly Dictionary<string, IMyModelDummy> s_dummyBuf =
             new Dictionary<string, IMyModelDummy>();
@@ -266,6 +288,7 @@ namespace MirrorCameraMod
             if (_block?.CubeGrid == null) return;
 
             string subtype = _block.BlockDefinition.SubtypeName;
+            if (subtype != null && NeverTiltSubtypes.Contains(subtype)) return;
             bool whitelisted = subtype != null && CornerLcdSubtypes.Contains(subtype);
 
             var aabb = Entity.PositionComp.LocalAABB;
@@ -282,18 +305,28 @@ namespace MirrorCameraMod
             // corner LCD (whose cube-shaped AABB hides the slant).
             if (!whitelisted && !(thinX || thinY || thinZ)) return;
 
-            // ── Screen-outward direction from mount points ──
-            // Each MountPoint.Normal points OUT of a mount face. The
-            // screen sits opposite the "default" mount, or the LAST
-            // mount when no default is set. Cardinal axis only — for
-            // the non-Flat corner LCDs whose actual screen is diagonal,
-            // this loses the diagonal component and yaw will have a
-            // partial-roll feel. User-acknowledged trade for keeping
-            // all blocks on the same model.
-            Vector3I mountNormal = FindScreenOutMountNormal();
-            Vector3 screenOut = new Vector3(-mountNormal.X, -mountNormal.Y, -mountNormal.Z);
-            if (screenOut.LengthSquared() < 1e-6f) return;
-            screenOut = Vector3.Normalize(screenOut);
+            // ── Screen-outward direction ──
+            // Default: derived from MountPoint.Normal — each Normal
+            // points OUT of a mount face, so the screen sits opposite
+            // the "default" mount (or the LAST mount when no default
+            // is set). Cardinal axis only.
+            //
+            // Override: subtypes in ScreenOutOverrides hardcode the
+            // direction because their mount layout doesn't match
+            // their actual screen face (e.g. Transparent LCD's
+            // default mount is on -Y but the screen faces +Z).
+            Vector3 screenOut;
+            if (subtype != null && ScreenOutOverrides.TryGetValue(subtype, out screenOut))
+            {
+                screenOut = Vector3.Normalize(screenOut);
+            }
+            else
+            {
+                Vector3I mountNormal = FindScreenOutMountNormal();
+                screenOut = new Vector3(-mountNormal.X, -mountNormal.Y, -mountNormal.Z);
+                if (screenOut.LengthSquared() < 1e-6f) return;
+                screenOut = Vector3.Normalize(screenOut);
+            }
 
             // ── Screen-right direction ──
             // Pitch axis is ALWAYS block-local X. Screen-right = +X for

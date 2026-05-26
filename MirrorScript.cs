@@ -240,12 +240,25 @@ namespace MirrorCameraMod
             "SmallBlockCorner_LCD_2",
         };
 
+        // Subtypes explicitly disabled regardless of AABB thinness.
+        // Match the never-tilt list in MirrorMeshTilt so the slider
+        // disappears on the same blocks the tilt component refuses
+        // to handle.
+        static readonly System.Collections.Generic.HashSet<string> s_neverEligibleSubtypes
+            = new System.Collections.Generic.HashSet<string>
+        {
+            "HoloLCDLarge",
+            "HoloLCDSmall",
+        };
+
         const float ThinDepthFractionOfGrid = 0.4f;
 
         static bool IsTiltEligible(IMyTerminalBlock block)
         {
             if (block == null) return false;
-            if (s_alwaysEligibleSubtypes.Contains(block.BlockDefinition.SubtypeName)) return true;
+            string subtype = block.BlockDefinition.SubtypeName;
+            if (s_neverEligibleSubtypes.Contains(subtype)) return false;
+            if (s_alwaysEligibleSubtypes.Contains(subtype)) return true;
 
             var cubeBlock = block as VRage.Game.ModAPI.IMyCubeBlock;
             var grid = cubeBlock?.CubeGrid;
