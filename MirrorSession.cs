@@ -181,7 +181,7 @@ namespace MirrorCameraMod
             }
         }
 
-        static string NoPluginMessage =
+        public static readonly string NoPluginMessage =
             "Hi! I am a Mirror! Yes a real working Mirror in Space Engineers!\n" + 
             "\n" + 
             "Or at least I could be... Sadly I can not render the world by myself :(\n" + 

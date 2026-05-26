@@ -275,18 +275,64 @@ namespace MirrorCameraMod
             => PanelRegistry.GetStatus(m_block, ResolveSurfaceIdx())
                ?? "Plugin not loaded";
 
+        // Latch so the surface's WriteText content is set exactly once
+        // per "plugin missing" stretch and cleared exactly once when the
+        // plugin shows up. Without it, every Run() tick would clobber
+        // any text the user typed on the surface after we set the hint.
+        bool m_wroteNoPluginText;
+
         void DrawStub()
         {
+            // Has the plugin actually reported anything for this panel?
+            // (GetStatus is null when the plugin isn't loaded or hasn't
+            // processed this surface yet — distinct from Subtitle's
+            // null-coalesce-to-"Plugin not loaded".)
+            bool pluginReporting =
+                PanelRegistry.GetStatus(m_block, ResolveSurfaceIdx()) != null;
+
+            // Surface text-content fallback: when the plugin isn't
+            // reporting, write the long welcome / install-the-plugin
+            // explainer to the surface's text content. The user only
+            // sees it if they switch this surface OFF our app
+            // (TEXT_AND_IMAGE mode) — but when they do, they get a
+            // pointer to where to install the plugin from. One-shot
+            // per transition so subsequent user edits aren't clobbered.
+            if (!pluginReporting && !m_wroteNoPluginText)
+            {
+                try { m_surface.WriteText(MirrorSession.NoPluginMessage); } catch { }
+                m_wroteNoPluginText = true;
+            }
+            else if (pluginReporting && m_wroteNoPluginText)
+            {
+                // Plugin came online. Clear our explainer so a future
+                // app-toggle-off doesn't surface stale "install the
+                // plugin" text long after the plugin loaded.
+                try { m_surface.WriteText(""); } catch { }
+                m_wroteNoPluginText = false;
+            }
+
+            // Large grid LCDs have plenty of resolution at the
+            // original 1.2 / 0.7 scale; doubling there left the text
+            // comically big. Small grid LCDs are tiny on the panel and
+            // need the 2x bump to be legible. Branch on grid size.
+            bool smallGrid =
+                m_block?.CubeGrid != null
+                && m_block.CubeGrid.GridSizeEnum == VRage.Game.MyCubeSize.Small;
+            float titleScale    = smallGrid ? 2.4f : 1.2f;
+            float subtitleScale = smallGrid ? 1.4f : 0.7f;
+            float titleOffsetY  = smallGrid ? 44f  : 22f;
+            float subOffsetY    = smallGrid ? 16f  : 8f;
+
             using (var frame = m_surface.DrawFrame())
             {
                 frame.Add(new MySprite(SpriteType.TEXTURE, "SquareSimple",
                     m_halfSize, m_size, new Color(10, 10, 15)));
                 frame.Add(new MySprite(SpriteType.TEXT, Title,
-                    m_halfSize - new Vector2(0, 22f * m_scale.Y),
-                    null, m_foregroundColor, "White", TextAlignment.CENTER, 1.2f * m_scale.Y));
+                    m_halfSize - new Vector2(0, titleOffsetY * m_scale.Y),
+                    null, m_foregroundColor, "White", TextAlignment.CENTER, titleScale * m_scale.Y));
                 frame.Add(new MySprite(SpriteType.TEXT, Subtitle,
-                    m_halfSize + new Vector2(0, 8f * m_scale.Y),
-                    null, new Color(m_foregroundColor, 0.5f), "White", TextAlignment.CENTER, 0.7f * m_scale.Y));
+                    m_halfSize + new Vector2(0, subOffsetY * m_scale.Y),
+                    null, new Color(m_foregroundColor, 0.5f), "White", TextAlignment.CENTER, subtitleScale * m_scale.Y));
             }
         }
 
@@ -301,6 +347,19 @@ namespace MirrorCameraMod
                     PanelRegistry.Remove(m_block, ResolveSurfaceIdx());
                     m_isRegistered = false;
                 }
+
+                // Clear our welcome-text injection so it doesn't linger
+                // on the surface after the user switches to another app
+                // / content type. Without this, the WriteText we did to
+                // expose the install-the-plugin hint in TEXT_AND_IMAGE
+                // mode persists indefinitely, polluting whatever the
+                // user wants the surface to show next.
+                if (m_wroteNoPluginText)
+                {
+                    try { m_surface?.WriteText(""); } catch { }
+                    m_wroteNoPluginText = false;
+                }
+
                 UnregisterForStorageNotify();
                 UnhookEvents();
             }
