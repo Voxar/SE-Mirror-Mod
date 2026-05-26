@@ -93,13 +93,40 @@ namespace MirrorCameraMod
 
         static void EnsureBuilt()
         {
+            // Yaw / Pitch are now block-level controls registered on
+            // IMyTextPanel itself (see RegisterBlockLevelControls). The
+            // Mirror script has no script-specific controls — its UI is
+            // entirely the always-visible block-level sliders, which
+            // work whether or not the Mirror app is the active script.
             if (s_controls != null) return;
+            s_controls = new List<IMyTerminalControl>();
+            s_actions  = new List<IMyTerminalAction>();
+        }
+
+        // ── Block-level tilt controls ────────────────────────────────────
+        //
+        // Registered once per session, from the per-block game-logic
+        // component's first frame (see MirrorMeshTilt.UpdateOnceBeforeFrame).
+        // Always-visible on text panels passing IsTiltEligible, regardless
+        // of which LCD app (if any) the surface is running.
+
+        static bool s_blockControlsRegistered;
+
+        public static void RegisterBlockLevelControls()
+        {
+            if (s_blockControlsRegistered) return;
+            s_blockControlsRegistered = true;
+
             var yaw   = CreateAngleSlider(yaw: true);
             var pitch = CreateAngleSlider(yaw: false);
-            s_controls = new List<IMyTerminalControl> { yaw, pitch };
-            s_actions  = new List<IMyTerminalAction>();
-            AddSliderActions(s_actions, "Mirror.CameraSource.MirrorYaw",  "Mirror Yaw",  yaw,   step: 5f, reset: 0f);
-            AddSliderActions(s_actions, "Mirror.CameraSource.MirrorPitch","Mirror Pitch",pitch, step: 5f, reset: 0f);
+            MyAPIGateway.TerminalControls.AddControl<IMyTextPanel>(yaw);
+            MyAPIGateway.TerminalControls.AddControl<IMyTextPanel>(pitch);
+
+            var actions = new List<IMyTerminalAction>();
+            AddSliderActions(actions, "Mirror.CameraSource.MirrorYaw",   "Mirror Yaw",   yaw,   step: 5f, reset: 0f);
+            AddSliderActions(actions, "Mirror.CameraSource.MirrorPitch", "Mirror Pitch", pitch, step: 5f, reset: 0f);
+            foreach (var a in actions)
+                MyAPIGateway.TerminalControls.AddAction<IMyTextPanel>(a);
         }
 
 

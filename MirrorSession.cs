@@ -182,14 +182,16 @@ namespace MirrorCameraMod
         }
 
         public static readonly string NoPluginMessage =
-            "Hi! I am a Mirror! Yes a real working Mirror in Space Engineers!\n" + 
+            "I am a Mirror!\n" + 
             "\n" + 
-            "Or at least I could be... Sadly I can not render the world by myself :(\n" + 
+            "Or I could be... Sadly I can not render the world by myself.\n" + 
             "I need help from a plugin called \"Mirror\" that is available via Pulsar,\n" + 
             "the Space Engineers Plugin Loader.\n" + 
             "\n" + 
             "Read all about it here:\n" + 
-            "https://github.com/SpaceGT/Pulsar";
+            "https://github.com/SpaceGT/Pulsar\n" + 
+            "\n" + 
+            "If you choose to use Pulsar, add the Mirror plugin to see yourself here!";
 
         static bool TryLoadEntity(IMyEntity entity)
             => Settings.MirrorStorage.TryLoadEntity(entity);
