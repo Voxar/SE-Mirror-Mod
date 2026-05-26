@@ -1,3 +1,24 @@
+# Tilted LCD Mirrors and Cameras
+
+This mod allows you to Pitch, Yaw and Roll your LCD panels by 45 degrees. 
+
+The mod does its best to keep the panels within their cube space but user discretion adviced to not let them clip into other objects.
+The mod only alters the location of the visuals and interactions. 
+
+
+! Build Info seem to only trigger where it sees both the physics shape and the model at the same time so it can be a bit tricky to aim right as the former is not visible at all.
+
+
+## Mirrors and Cameras? 
+
+The origin of this mod is that I wanted to have proper rear view mirrors in my rovers.
+But for those to be useful they need adjustability, and that's what gave birth to this mod.
+
+This Mod somes two LCD additional apps as well.
+
+## Mirror
+
+
 # Mirrors for Space Engineers!
 Can you see yourself playing Space Engineers?
 
@@ -103,3 +124,14 @@ This means only one mirror in view will be smooth, the rest will lag a bit. At 1
 but after that it gets choppy. I try to guess which one mirror or camera screen you are looking at and keep that closest to realtime so have your crosshair on top of that one.
 
 uh, well that's it! 
+
+
+
+# Thank you
+
+Communities
+- Pulsar
+- Splitsie
+
+[AdjustableLCDs Mod](https://steamcommunity.com/sharedfiles/filedetails/?id=2427400629)
+Showing how to tilt screens without a plugin. Grab this for extreme flexibility in LCD placement
