@@ -172,9 +172,9 @@ namespace MirrorCameraMod
 
         static void RegisterPerSurfaceProvider<TBlock>() where TBlock : class, IMyTerminalBlock
         {
-            var slider   = CreateZoomSlider();
-            var checkbox = CreateOverrideCameraZoomCheckbox();
-            var listbox  = CreateListbox();
+            var slider   = CreateZoomSlider<TBlock>();
+            var checkbox = CreateOverrideCameraZoomCheckbox<TBlock>();
+            var listbox  = CreateListbox<TBlock>();
 
             // Hidden long-valued property — no UI, only here so PB
             // scripts can GetValueLong / SetValueLong by id.
@@ -262,10 +262,16 @@ namespace MirrorCameraMod
             return action;
         }
 
-        static IMyTerminalControlListbox CreateListbox()
+        static IMyTerminalControlListbox CreateListbox<TBlock>() where TBlock : class, IMyTerminalBlock
         {
+            // CreateControl<..., TBlock> triggers SE's EnsureControlsAreCreated
+            // for TBlock's concrete type before any AddControl<TBlock> call.
+            // Without that, AddControl below poisons MyTerminalControlFactory's
+            // dict with an empty BlockData, which makes SE skip creating
+            // the block's native controls (Title textbox, Content combobox
+            // on text panels, etc.) — they go missing forever.
             var lb = MyAPIGateway.TerminalControls
-                .CreateControl<IMyTerminalControlListbox, IMyTerminalBlock>(ListboxId);
+                .CreateControl<IMyTerminalControlListbox, TBlock>(ListboxId);
             lb.Title   = MyStringId.GetOrCompute("Camera Source");
             lb.Tooltip = MyStringId.GetOrCompute("Camera on this grid to display.");
             lb.Multiselect      = false;
@@ -283,10 +289,10 @@ namespace MirrorCameraMod
             return lb;
         }
 
-        static IMyTerminalControlCheckbox CreateOverrideCameraZoomCheckbox()
+        static IMyTerminalControlCheckbox CreateOverrideCameraZoomCheckbox<TBlock>() where TBlock : class, IMyTerminalBlock
         {
             var cb = MyAPIGateway.TerminalControls
-                .CreateControl<IMyTerminalControlCheckbox, IMyTerminalBlock>(OverrideCameraZoomId);
+                .CreateControl<IMyTerminalControlCheckbox, TBlock>(OverrideCameraZoomId);
             cb.Title   = MyStringId.GetOrCompute("Override Camera Zoom");
             cb.Tooltip = MyStringId.GetOrCompute(
                 "Override the camera block's zoom for this screen. " +
@@ -302,10 +308,10 @@ namespace MirrorCameraMod
             return cb;
         }
 
-        static IMyTerminalControlSlider CreateZoomSlider()
+        static IMyTerminalControlSlider CreateZoomSlider<TBlock>() where TBlock : class, IMyTerminalBlock
         {
             var sl = MyAPIGateway.TerminalControls
-                .CreateControl<IMyTerminalControlSlider, IMyTerminalBlock>(ZoomId);
+                .CreateControl<IMyTerminalControlSlider, TBlock>(ZoomId);
             sl.Title   = MyStringId.GetOrCompute("Camera View Zoom");
             sl.Tooltip = MyStringId.GetOrCompute("Per-screen zoom override for the selected camera.");
             sl.SetLimits(SurfaceSettings.MinZoom, SurfaceSettings.MaxZoom);
