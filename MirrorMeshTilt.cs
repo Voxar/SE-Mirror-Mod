@@ -56,13 +56,6 @@ namespace MirrorCameraMod
         private Vector3 _localCenter;          // block-local AABB centre
         private float   _halfRight;            // half-extent along screen right
         private float   _halfUp;               // half-extent along screen up
-        // +1 or -1: which side of the AABB along the screen-normal
-        // axis is the visible screen face. Determined by AABB asymmetry
-        // around block origin — the mesh extends farther toward the
-        // screen than the mount. Folded into the rotation sign so the
-        // panel always opens outward regardless of which way the block
-        // faces in its local frame.
-        private float   _outwardSign;
         private float   _lastDegX, _lastDegY, _lastDegZ;
         private bool    _tilted;
 
@@ -106,6 +99,11 @@ namespace MirrorCameraMod
         {
             base.UpdateBeforeSimulation10();
             if (!_hasBaseline) return;
+            // Ineligible panels never tilt — skip the three storage
+            // reads and the no-op Apply call. With ~hundreds of text
+            // panels in a typical world, the early-return saves every
+            // 10th-frame dict-lookup × 3 per non-thin panel.
+            if (!_eligible) return;
 
             // Vanilla IMyTextPanel = single surface.
             float degX = MirrorStorage.GetMirrorAngleX(Entity, 0);
@@ -203,8 +201,8 @@ namespace MirrorCameraMod
             float pitchRad = applyY * Deg2Rad;
             float rollRad  = applyZ * Deg2Rad;
 
-            Matrix rYaw   = Matrix.CreateFromAxisAngle(_localUpUnit,    -yawRad   * _outwardSign);
-            Matrix rPitch = Matrix.CreateFromAxisAngle(_localRightUnit, pitchRad * _outwardSign);
+            Matrix rYaw   = Matrix.CreateFromAxisAngle(_localUpUnit,    -yawRad);
+            Matrix rPitch = Matrix.CreateFromAxisAngle(_localRightUnit, pitchRad);
             Matrix rRoll  = Matrix.CreateFromAxisAngle(screenNormal,    rollRad);
 
             // Roll first (in-plane around rollPivot), then yaw/pitch
@@ -352,7 +350,6 @@ namespace MirrorCameraMod
             _localUpUnit    = screenUp;
             _halfRight      = Math.Min(aabbHalfRight, blockHalfRight);
             _halfUp         = Math.Min(aabbHalfUp,    blockHalfUp);
-            _outwardSign    = +1f; // signs already baked into screenRight / screenUp
             _eligible       = true;
         }
 
@@ -386,20 +383,6 @@ namespace MirrorCameraMod
             IMyModelDummy dummy;
             if (!TryGetDetectorDummy(out dummy)) return false;
             translation = dummy.Matrix.Translation;
-            return true;
-        }
-
-        // Direction-only signal from the detector dummy's Forward axis.
-        // Used only for the 4 non-Flat corner LCDs whose screen normal
-        // is genuinely diagonal — the dummy's Forward direction is the
-        // diagonal screen-outward direction in block-local frame.
-        // Magnitude unreliable, so callers normalize.
-        private bool TryGetDetectorForward(out Vector3 forward)
-        {
-            forward = Vector3.Zero;
-            IMyModelDummy dummy;
-            if (!TryGetDetectorDummy(out dummy)) return false;
-            forward = dummy.Matrix.Forward;
             return true;
         }
 

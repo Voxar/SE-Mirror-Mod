@@ -45,7 +45,13 @@ namespace MirrorCameraMod.Settings
         static readonly Dictionary<long, SurfaceSettings> s_state =
             new Dictionary<long, SurfaceSettings>();
 
-        static long MakeKey(long blockId, int surfaceIdx)
+        /// <summary>Packed (blockId, surfaceIdx) dictionary key shared
+        /// across <see cref="MirrorStorage"/>, <see cref="PanelTss"/>,
+        /// and <see cref="Network.SettingsNetwork"/>. surfaceIdx never
+        /// exceeds 15 on any vanilla LCD; packing into one long avoids
+        /// the per-lookup tuple allocation a Dictionary&lt;(long,int)&gt;
+        /// would force.</summary>
+        internal static long MakeKey(long blockId, int surfaceIdx)
             => (blockId << 4) | (long)(surfaceIdx & 0xF);
 
         // ── Read API ────────────────────────────────────────────────────
@@ -117,6 +123,7 @@ namespace MirrorCameraMod.Settings
         {
             var cur = TakeForMutation(entity, surfaceIdx);
             if (cur == null) return;
+            if (cur.CameraId == id) return;
             cur.CameraId = id;
             CommitAndPublish(entity, surfaceIdx, cur);
         }
@@ -125,7 +132,9 @@ namespace MirrorCameraMod.Settings
         {
             var cur = TakeForMutation(entity, surfaceIdx);
             if (cur == null) return;
-            cur.Zoom = SurfaceSettings.ClampZoom(zoom);
+            float clamped = SurfaceSettings.ClampZoom(zoom);
+            if (cur.Zoom == clamped) return;
+            cur.Zoom = clamped;
             CommitAndPublish(entity, surfaceIdx, cur);
         }
 
@@ -133,7 +142,9 @@ namespace MirrorCameraMod.Settings
         {
             var cur = TakeForMutation(entity, surfaceIdx);
             if (cur == null) return;
-            cur.Range = SurfaceSettings.ClampRange(range);
+            float clamped = SurfaceSettings.ClampRange(range);
+            if (cur.Range == clamped) return;
+            cur.Range = clamped;
             CommitAndPublish(entity, surfaceIdx, cur);
         }
 
@@ -141,7 +152,9 @@ namespace MirrorCameraMod.Settings
         {
             var cur = TakeForMutation(entity, surfaceIdx);
             if (cur == null) return;
-            cur.MirrorAngleDegX = SurfaceSettings.ClampMirrorAngle(deg);
+            float clamped = SurfaceSettings.ClampMirrorAngle(deg);
+            if (cur.MirrorAngleDegX == clamped) return;
+            cur.MirrorAngleDegX = clamped;
             CommitAndPublish(entity, surfaceIdx, cur);
         }
 
@@ -149,7 +162,9 @@ namespace MirrorCameraMod.Settings
         {
             var cur = TakeForMutation(entity, surfaceIdx);
             if (cur == null) return;
-            cur.MirrorAngleDegY = SurfaceSettings.ClampMirrorAngle(deg);
+            float clamped = SurfaceSettings.ClampMirrorAngle(deg);
+            if (cur.MirrorAngleDegY == clamped) return;
+            cur.MirrorAngleDegY = clamped;
             CommitAndPublish(entity, surfaceIdx, cur);
         }
 
@@ -157,7 +172,9 @@ namespace MirrorCameraMod.Settings
         {
             var cur = TakeForMutation(entity, surfaceIdx);
             if (cur == null) return;
-            cur.MirrorAngleDegZ = SurfaceSettings.ClampMirrorAngle(deg);
+            float clamped = SurfaceSettings.ClampMirrorAngle(deg);
+            if (cur.MirrorAngleDegZ == clamped) return;
+            cur.MirrorAngleDegZ = clamped;
             CommitAndPublish(entity, surfaceIdx, cur);
         }
 
@@ -165,6 +182,7 @@ namespace MirrorCameraMod.Settings
         {
             var cur = TakeForMutation(entity, surfaceIdx);
             if (cur == null) return;
+            if (cur.OverrideCameraZoom == v) return;
             cur.OverrideCameraZoom = v;
             CommitAndPublish(entity, surfaceIdx, cur);
         }
@@ -176,7 +194,9 @@ namespace MirrorCameraMod.Settings
             // No upper clamp here — the per-block slider's SetLimits
             // already caps it to the camera definition's MaxFov/MinFov
             // ratio. Ground at 1× so the value can't underflow.
-            cur.CameraOwnZoom = zoom < 1f ? 1f : zoom;
+            float clamped = zoom < 1f ? 1f : zoom;
+            if (cur.CameraOwnZoom == clamped) return;
+            cur.CameraOwnZoom = clamped;
             CommitAndPublish(cameraEntity, 0, cur);
         }
 

@@ -31,6 +31,12 @@ namespace MirrorCameraMod.Settings
         public const float MinMirrorAngleDeg = -45f;
         public const float MaxMirrorAngleDeg = +45f;
 
+        // Shared display format for any zoom slider / action / writer.
+        // Keeps the LCD-side view zoom and the per-camera zoom rendered
+        // identically — same digit count, same "×" suffix everywhere.
+        public const string ZoomFormat = "0.0";
+        public const char   ZoomUnit   = '×';
+
         // ── Wire fields ─────────────────────────────────────────────────
 
         [ProtoMember(1)] public long  CameraId;

@@ -116,16 +116,11 @@ namespace MirrorCameraMod.Terminal
 
         static void OnCustomActionGetter(IMyTerminalBlock block, List<IMyTerminalAction> actions)
         {
-            if (block == null) return;
-            var provider = block as IMyTextSurfaceProvider;
             // Single-surface only — multi-surface providers (cockpits,
             // PBs) skip the per-screen camera actions on purpose.
+            var provider = block as IMyTextSurfaceProvider;
             if (provider == null || provider.SurfaceCount != 1) return;
-
-            var surf = provider.GetSurface(0);
-            if (surf == null) return;
-            if (surf.ContentType != ContentType.SCRIPT) return;
-            if (surf.Script != MirrorSession.CameraScriptId) return;
+            if (GetActiveSurfaceScriptId(block) != MirrorSession.CameraScriptId) return;
 
             var appActions = CameraScript.GetCustomActions();
             if (appActions == null) return;
@@ -136,7 +131,7 @@ namespace MirrorCameraMod.Terminal
         // whatever script is driving the block's currently-edited
         // surface, or null when the block is not a surface provider,
         // the surface is not in SCRIPT content mode, or no script is set.
-        static string GetActiveSurfaceScriptId(IMyTerminalBlock block)
+        internal static string GetActiveSurfaceScriptId(IMyTerminalBlock block)
         {
             if (block == null) return null;
             var provider = block as IMyTextSurfaceProvider;

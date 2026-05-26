@@ -37,7 +37,7 @@ namespace MirrorCameraMod.Terminal
             try { DoRegister(); }
             catch (Exception ex)
             {
-                MyLog.Default.WriteLine("[MirrorMod] Mirror controls registration failed: " + ex);
+                MyLog.Default.WriteLine("[MirrorMod] Terminal controls registration failed: " + ex);
             }
         }
     }

@@ -208,15 +208,6 @@ namespace MirrorCameraMod
             => CameraEnumerator.GetEffectiveCameraId(entity, surfaceIdx);
 
         /// <summary>Forwarder: see
-        /// <see cref="Settings.SurfaceSettings.DefaultRange"/>.</summary>
-        public static float DefaultRange => Settings.SurfaceSettings.DefaultRange;
-
-        /// <summary>Forwarder: see
-        /// <see cref="Settings.MirrorStorage.GetRange"/>.</summary>
-        public static float GetSelectedRange(IMyEntity entity, int surfaceIdx)
-            => Settings.MirrorStorage.GetRange(entity, surfaceIdx);
-
-        /// <summary>Forwarder: see
         /// <see cref="Settings.MirrorStorage.GetZoom"/>.</summary>
         public static float GetSelectedZoom(IMyEntity entity, int surfaceIdx)
             => Settings.MirrorStorage.GetZoom(entity, surfaceIdx);

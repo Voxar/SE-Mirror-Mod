@@ -114,15 +114,14 @@ namespace MirrorCameraMod
 
             var cam = camEnt as IMyCameraBlock;
             if (cam == null) return null;
-            if (!string.IsNullOrEmpty(cam.CustomName)) title = cam.CustomName;
-
-            zoom = MirrorStorage.GetOverrideCameraZoom(entity, idx)
-                ? MirrorSession.GetSelectedZoom(entity, idx)
-                : MirrorStorage.GetCameraOwnZoom(camEnt);
 
             var func = camEnt as Sandbox.ModAPI.IMyFunctionalBlock;
             if (func == null || !func.IsWorking) return null;
 
+            if (!string.IsNullOrEmpty(cam.CustomName)) title = cam.CustomName;
+            zoom = MirrorStorage.GetOverrideCameraZoom(entity, idx)
+                ? MirrorSession.GetSelectedZoom(entity, idx)
+                : MirrorStorage.GetCameraOwnZoom(camEnt);
             return cam;
         }
 
@@ -137,8 +136,6 @@ namespace MirrorCameraMod
         // Any one block-type instance suffices.
         static IMyTerminalControlSlider s_zoom;
 
-        const string ZoomFormat = "0.0";
-        const char   ZoomUnit   = '×';
 
         public static void RegisterTerminalControls()
         {
@@ -164,11 +161,11 @@ namespace MirrorCameraMod
             s_actions.Add(SliderHelpers.BuildSliderAction(
                 "Mirror.Zoom.Increase", "Increase Camera View Zoom", "Increase",
                 s_zoom, b => SliderHelpers.Clamp(s_zoom, b, s_zoom.Getter(b) + 1f),
-                ZoomFormat, ZoomUnit));
+                SurfaceSettings.ZoomFormat, SurfaceSettings.ZoomUnit));
             s_actions.Add(SliderHelpers.BuildSliderAction(
                 "Mirror.Zoom.Decrease", "Decrease Camera View Zoom", "Decrease",
                 s_zoom, b => SliderHelpers.Clamp(s_zoom, b, s_zoom.Getter(b) - 1f),
-                ZoomFormat, ZoomUnit));
+                SurfaceSettings.ZoomFormat, SurfaceSettings.ZoomUnit));
             s_actions.Add(BuildCycleAction("Mirror.Camera.Next",     "Next Camera",     "Increase", direction: +1));
             s_actions.Add(BuildCycleAction("Mirror.Camera.Previous", "Previous Camera", "Decrease", direction: -1));
         }
@@ -231,17 +228,7 @@ namespace MirrorCameraMod
         // only when the user has the Camera app selected on the
         // currently-edited surface.
         internal static bool IsCameraSurface(IMyTerminalBlock block)
-        {
-            if (block == null) return false;
-            var provider = block as Sandbox.ModAPI.Ingame.IMyTextSurfaceProvider;
-            if (provider == null || provider.SurfaceCount <= 0) return false;
-            int idx = LcdAppTerminalControls.ActiveSurfaceIndex(block);
-            if (idx < 0 || idx >= provider.SurfaceCount) return false;
-            var surf = provider.GetSurface(idx);
-            if (surf == null) return false;
-            if (surf.ContentType != VRage.Game.GUI.TextPanel.ContentType.SCRIPT) return false;
-            return surf.Script == MirrorSession.CameraScriptId;
-        }
+            => LcdAppTerminalControls.GetActiveSurfaceScriptId(block) == MirrorSession.CameraScriptId;
 
         // Builds a Next-/Previous-camera toolbar action. Uses
         // ActiveSurfaceIndex(b) — correct for single-surface text
@@ -327,7 +314,7 @@ namespace MirrorCameraMod
             sl.Writer = (b, sb) =>
             {
                 float v = MirrorStorage.GetZoom(b, LcdAppTerminalControls.ActiveSurfaceIndex(b));
-                sb.Append(v.ToString(ZoomFormat, System.Globalization.CultureInfo.InvariantCulture)).Append(ZoomUnit);
+                sb.Append(v.ToString(SurfaceSettings.ZoomFormat, System.Globalization.CultureInfo.InvariantCulture)).Append(SurfaceSettings.ZoomUnit);
             };
             // Visible only when the user explicitly opted into the
             // per-screen override AND a camera is selected on a Camera-

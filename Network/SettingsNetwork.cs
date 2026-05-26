@@ -98,7 +98,7 @@ namespace MirrorCameraMod.Network
             new Dictionary<long, DateTime>();
 
         static long MakeDebounceKey(long blockId, int surfaceIdx)
-            => (blockId << 4) | (long)(surfaceIdx & 0xF);
+            => MirrorStorage.MakeKey(blockId, surfaceIdx);
 
         /// <summary>Called by <see cref="MirrorStorage"/> after an edit
         /// updates the local in-memory state. Leading-edge debounced

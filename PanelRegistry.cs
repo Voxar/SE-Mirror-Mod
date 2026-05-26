@@ -106,7 +106,7 @@ namespace MirrorCameraMod
         {
             if (block == null || surface == null) return;
             var k = new Key { BlockId = block.EntityId, SurfaceIdx = surfaceIdx };
-            s_panels[k] = new PanelInfo {
+            var next = new PanelInfo {
                 Surface         = surface,
                 Block           = block,
                 SurfaceIdx      = surfaceIdx,
@@ -117,6 +117,13 @@ namespace MirrorCameraMod
                 MirrorAngleDegY = mirrorAngleDegY,
                 MirrorAngleDegZ = mirrorAngleDegZ,
             };
+            // Skip the dict write + snapshot rebuild when nothing changed.
+            // Every TSS Update100 calls SyncRegistration → AddOrUpdate with
+            // identical values for steady-state panels; without this guard
+            // each call allocates a fresh PanelInfo[N] snapshot.
+            PanelInfo prev;
+            if (s_panels.TryGetValue(k, out prev) && PanelInfoEquals(prev, next)) return;
+            s_panels[k] = next;
             RebuildSnapshot();
         }
 
@@ -124,13 +131,29 @@ namespace MirrorCameraMod
         {
             if (block == null) return;
             var k = new Key { BlockId = block.EntityId, SurfaceIdx = surfaceIdx };
-            s_panels.Remove(k);
+            if (!s_panels.Remove(k)) return;
             // Clear any plugin status for the panel — leaving it would
             // surface a stale "rendered" / "failed" on the next time the
             // same key registers (e.g. block rebuild).
             string ignore;
             s_status.TryRemove(k, out ignore);
             RebuildSnapshot();
+        }
+
+        static bool PanelInfoEquals(PanelInfo a, PanelInfo b)
+        {
+            // Reference equality on Surface/Block/CameraBlock — these are
+            // long-lived engine handles, swapped only on block rebuild.
+            // Value equality on numeric / enum fields.
+            return ReferenceEquals(a.Surface, b.Surface)
+                && ReferenceEquals(a.Block,   b.Block)
+                && ReferenceEquals(a.CameraBlock, b.CameraBlock)
+                && a.SurfaceIdx      == b.SurfaceIdx
+                && a.Mode            == b.Mode
+                && a.Zoom            == b.Zoom
+                && a.MirrorAngleDegX == b.MirrorAngleDegX
+                && a.MirrorAngleDegY == b.MirrorAngleDegY
+                && a.MirrorAngleDegZ == b.MirrorAngleDegZ;
         }
 
         /// <summary>

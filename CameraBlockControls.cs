@@ -37,9 +37,6 @@ namespace MirrorCameraMod
         public const string MinFovPropertyId  = "Mirror.CameraMinFov";
         public const string MaxFovPropertyId  = "Mirror.CameraMaxFov";
 
-        const string ZoomFormat = "0.0";
-        const char   ZoomUnit   = '×';
-
         static bool s_registered;
 
         public static void RegisterTerminalControls()
@@ -65,8 +62,8 @@ namespace MirrorCameraMod
             };
             sl.Writer = (b, sb) =>
                 sb.Append(MirrorStorage.GetCameraOwnZoom(b)
-                    .ToString(ZoomFormat, System.Globalization.CultureInfo.InvariantCulture))
-                  .Append(ZoomUnit);
+                    .ToString(SurfaceSettings.ZoomFormat, System.Globalization.CultureInfo.InvariantCulture))
+                  .Append(SurfaceSettings.ZoomUnit);
             sl.Enabled = b => true;
             sl.Visible = b => true;
             MyAPIGateway.TerminalControls.AddControl<IMyCameraBlock>(sl);
@@ -119,8 +116,8 @@ namespace MirrorCameraMod
             };
             action.Writer = (b, sb) =>
                 sb.Append(MirrorStorage.GetCameraOwnZoom(b)
-                    .ToString(ZoomFormat, System.Globalization.CultureInfo.InvariantCulture))
-                  .Append(ZoomUnit);
+                    .ToString(SurfaceSettings.ZoomFormat, System.Globalization.CultureInfo.InvariantCulture))
+                  .Append(SurfaceSettings.ZoomUnit);
             return action;
         }
 
@@ -141,46 +138,57 @@ namespace MirrorCameraMod
         // see the same value.
         static void SetFovRadians(IMyTerminalBlock block, float fov)
         {
-            float min = MinFovFor(block);
-            float max = MaxFovFor(block);
+            float min, max;
+            GetFovBounds(block, out min, out max);
             if (fov < min) fov = min;
             else if (fov > max) fov = max;
             MirrorStorage.SetCameraOwnZoom(block, max / fov);
         }
 
+        // Fallbacks chosen to keep PB-facing values harmless when a
+        // camera ships with a missing or malformed definition — 0.1 rad
+        // (~5.7°) for min and 1.2 rad (~68.8°) for max are SE's stock
+        // camera defaults.
+        const float FallbackMinFov = 0.1f;
+        const float FallbackMaxFov = 1.2f;
+
+        // Single definition lookup feeds MinFovFor / MaxFovFor / MaxZoomFor.
+        static void GetFovBounds(IMyTerminalBlock block, out float min, out float max)
+        {
+            min = FallbackMinFov;
+            max = FallbackMaxFov;
+            if (block == null) return;
+            MyCameraBlockDefinition def;
+            if (!MyDefinitionManager.Static.TryGetDefinition<MyCameraBlockDefinition>(
+                    block.BlockDefinition, out def) || def == null) return;
+            if (def.MinFov > 0f) min = def.MinFov;
+            if (def.MaxFov > 0f) max = def.MaxFov;
+        }
+
         // Max zoom factor for a camera = MaxFov / MinFov from its
-        // definition. Falls back to 1× if the definition is missing or
-        // its FoV range is degenerate — slider becomes a no-op rather
-        // than throwing.
+        // definition. Falls back to 1× if the FoV range is degenerate
+        // — slider becomes a no-op rather than throwing.
         static float MaxZoomFor(IMyTerminalBlock block)
         {
-            float min = MinFovFor(block);
-            float max = MaxFovFor(block);
+            float min, max;
+            GetFovBounds(block, out min, out max);
             if (min <= 0f || max <= 0f) return 1f;
             float ratio = max / min;
             return ratio < 1f ? 1f : ratio;
         }
 
-        // Definition-bounded FoV reads. Fallbacks chosen to keep the
-        // PB-facing values harmless when a camera ships with a missing
-        // or malformed definition — 0.1 rad (~5.7°) for min and 1.2
-        // rad (~68.8°) for max are SE's stock camera defaults.
         static float MinFovFor(IMyTerminalBlock block)
         {
-            MyCameraBlockDefinition def;
-            if (block == null) return 0.1f;
-            if (!MyDefinitionManager.Static.TryGetDefinition<MyCameraBlockDefinition>(
-                    block.BlockDefinition, out def) || def == null) return 0.1f;
-            return def.MinFov > 0f ? def.MinFov : 0.1f;
+            float min, max;
+            GetFovBounds(block, out min, out max);
+            return min;
         }
 
         static float MaxFovFor(IMyTerminalBlock block)
         {
-            MyCameraBlockDefinition def;
-            if (block == null) return 1.2f;
-            if (!MyDefinitionManager.Static.TryGetDefinition<MyCameraBlockDefinition>(
-                    block.BlockDefinition, out def) || def == null) return 1.2f;
-            return def.MaxFov > 0f ? def.MaxFov : 1.2f;
+            float min, max;
+            GetFovBounds(block, out min, out max);
+            return max;
         }
     }
 }
