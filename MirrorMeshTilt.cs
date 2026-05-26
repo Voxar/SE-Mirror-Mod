@@ -152,22 +152,29 @@ namespace MirrorCameraMod
                 return;
             }
 
+            // Slider semantics: increasing pitch tilts the screen TOP
+            // toward the viewer; increasing yaw swings the screen to
+            // the viewer's right. Internal rotation math produces the
+            // opposite direction by default, so apply the negated
+            // slider values. The original degX / degY remain in the
+            // cache below so the equality check matches slider values
+            // one-to-one.
+            float applyX = -degX;
+            float applyY = -degY;
+
             // Build tilt in BLOCK-LOCAL frame, then left-multiply with
             // baseLocal. Pivot is on the OPPOSITE side from where the
-            // slider's lean is going: the rotation makes the lean-side
-            // edge swing INTO the block interior (away from the wall),
-            // anchored at the opposite edge. Without the sign flip,
-            // the lean-side became the pivot and the OTHER edge would
-            // swing outward into the wall — visible as the mesh
-            // extruding past the block boundary. Math.Sign(0) puts the
+            // lean is going: the rotation makes the lean-side edge
+            // swing INTO the block interior (away from the wall),
+            // anchored at the opposite edge. Math.Sign(0) puts the
             // pivot at the centre along that axis — harmless because
             // the rotation amount on that axis is also zero.
             Vector3 pivot = _localCenter
-                          - Math.Sign(degX) * _halfRight * _localRightUnit
-                          - Math.Sign(degY) * _halfUp    * _localUpUnit;
+                          - Math.Sign(applyX) * _halfRight * _localRightUnit
+                          - Math.Sign(applyY) * _halfUp    * _localUpUnit;
 
-            float yawRad   = degX * Deg2Rad;
-            float pitchRad = degY * Deg2Rad;
+            float yawRad   = applyX * Deg2Rad;
+            float pitchRad = applyY * Deg2Rad;
 
             Matrix rYaw   = Matrix.CreateFromAxisAngle(_localUpUnit,    -yawRad   * _outwardSign);
             Matrix rPitch = Matrix.CreateFromAxisAngle(_localRightUnit, pitchRad * _outwardSign);
