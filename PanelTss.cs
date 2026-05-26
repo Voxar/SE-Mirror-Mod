@@ -296,26 +296,29 @@ namespace MirrorCameraMod
 
         void DrawStub()
         {
-            // Has the plugin actually reported anything for this panel?
-            // (GetStatus is null when the plugin isn't loaded or hasn't
-            // processed this surface yet — distinct from Subtitle's
-            // null-coalesce-to-"Plugin not loaded".)
-            bool pluginReporting =
-                PanelRegistry.GetStatus(m_block, ResolveSurfaceIdx()) != null;
+            // Global "plugin loaded?" signal — flips true once the
+            // plugin has reported a status for ANY panel. Per-panel
+            // status (used for the subtitle) can be null during the
+            // brief window between TSS startup and the plugin's first
+            // render of that specific panel; that gap was causing the
+            // welcome text to be written and then stick around when
+            // the user switched apps quickly. Using a global signal
+            // avoids that race.
+            bool pluginLoaded = PanelRegistry.PluginEverReported;
 
             // Surface text-content fallback: when the plugin isn't
-            // reporting, write the long welcome / install-the-plugin
+            // loaded, write the long welcome / install-the-plugin
             // explainer to the surface's text content. The user only
             // sees it if they switch this surface OFF our app
             // (TEXT_AND_IMAGE mode) — but when they do, they get a
             // pointer to where to install the plugin from. One-shot
             // per transition so subsequent user edits aren't clobbered.
-            if (!pluginReporting && !m_wroteNoPluginText)
+            if (!pluginLoaded && !m_wroteNoPluginText)
             {
                 try { m_surface.WriteText(MirrorSession.NoPluginMessage); } catch { }
                 m_wroteNoPluginText = true;
             }
-            else if (pluginReporting && m_wroteNoPluginText)
+            else if (pluginLoaded && m_wroteNoPluginText)
             {
                 // Plugin came online. Clear our explainer so a future
                 // app-toggle-off doesn't surface stale "install the

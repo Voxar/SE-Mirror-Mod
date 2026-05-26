@@ -151,8 +151,18 @@ namespace MirrorCameraMod
             else
             {
                 s_status[k] = status;
+                if (!s_pluginEverReported) s_pluginEverReported = true;
             }
         }
+
+        // Sticky flag — flips true the first time the plugin calls
+        // SetStatus(non-null) for ANY panel. Used by mod TSS scripts
+        // as a global "plugin is loaded" signal: per-panel status can
+        // be null during the brief window between TSS startup and the
+        // plugin's first render of that specific panel, but if the
+        // plugin has reported on ANY panel we know it's running.
+        static volatile bool s_pluginEverReported;
+        public static bool PluginEverReported => s_pluginEverReported;
 
         /// <summary>
         /// Sim-thread side status reader. Mod TSS scripts call this each
@@ -180,6 +190,7 @@ namespace MirrorCameraMod
             s_panels.Clear();
             s_status.Clear();
             s_snapshot = new PanelInfo[0];
+            s_pluginEverReported = false;
         }
 
         static void RebuildSnapshot()

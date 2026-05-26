@@ -26,9 +26,9 @@ namespace MirrorCameraMod
     /// Right (pitch axis) and Up (yaw axis). This matches the visible
     /// behaviour of dedicated LCD-tilt mods.</para>
     ///
-    /// <para>Eligibility check (block must be thin) is reused from
-    /// <see cref="MirrorScript.IsTiltEligible"/> via the public surface
-    /// so the slider gate and the tilt gate stay in lockstep.</para>
+    /// <para>Eligibility (block must be thin / whitelisted) delegates
+    /// to <see cref="TiltTerminalControls.IsTiltEligible"/> so the
+    /// slider gate and the tilt gate are the same check.</para>
     ///
     /// <para>Visible-mesh refresh after <c>SetLocalMatrix</c> requires
     /// power-cycling <c>block.Enabled</c> — the cube grid renderer
@@ -41,8 +41,7 @@ namespace MirrorCameraMod
 
     public class MirrorMeshTilt<T> : MyGameLogicComponent where T : IMyFunctionalBlock
     {
-        private const float Deg2Rad                 = (float)(Math.PI / 180.0);
-        private const float ThinDepthFractionOfGrid = 0.4f;
+        private const float Deg2Rad = (float)(Math.PI / 180.0);
 
         private T       _block;
         private Matrix  _baseLocal;            // engine-supplied un-tilted matrix
@@ -78,12 +77,12 @@ namespace MirrorCameraMod
         {
             base.UpdateOnceBeforeFrame();
 
-            // Register the block-level yaw/pitch sliders on first call.
-            // Idempotent (static flag on MirrorScript).
-            try { MirrorScript.RegisterBlockLevelControls(); }
+            // Register block-level tilt controls and Camera controls
+            // on first call. Idempotent (static flag inside each).
+            try { TiltTerminalControls.RegisterTerminalControls(); CameraScript.RegisterTerminalControls(); }
             catch (Exception ex)
             {
-                MyLog.Default.WriteLine("[MirrorMod] RegisterBlockLevelControls failed: " + ex);
+                MyLog.Default.WriteLine("[MirrorMod] Register controls failed: " + ex);
             }
 
             if (_block?.CubeGrid?.Physics == null) return; // projected / preview
@@ -229,29 +228,6 @@ namespace MirrorCameraMod
 
         // ── Resolve ──────────────────────────────────────────────────────
 
-        // Vanilla LCDs whose screen face is at 45° (non-Flat corner
-        // LCD top/bottom variants). They pass eligibility via this
-        // whitelist because their cube-shaped AABB doesn't reveal the
-        // slanted screen geometry through thinness alone.
-        private static readonly HashSet<string> CornerLcdSubtypes =
-            new HashSet<string>(StringComparer.Ordinal)
-            {
-                "LargeBlockCorner_LCD_1",
-                "LargeBlockCorner_LCD_2",
-                "SmallBlockCorner_LCD_1",
-                "SmallBlockCorner_LCD_2",
-            };
-
-        // Subtypes never eligible for tilt regardless of geometry.
-        // Use for blocks whose visible projector / screen geometry
-        // can't be sensibly handled by the generic frame model.
-        private static readonly HashSet<string> NeverTiltSubtypes =
-            new HashSet<string>(StringComparer.Ordinal)
-            {
-                "HoloLCDLarge",
-                "HoloLCDSmall",
-            };
-
         // Subtypes where screen-right points along block -X instead of
         // block +X. Empirically determined; the universal rule is that
         // the pitch axis is always block-local X, but the SIGN of
@@ -287,23 +263,15 @@ namespace MirrorCameraMod
             _eligible = false;
             if (_block?.CubeGrid == null) return;
 
+            if (!TiltTerminalControls.IsTiltEligible(_block as Sandbox.ModAPI.IMyTerminalBlock))
+                return;
+
             string subtype = _block.BlockDefinition.SubtypeName;
-            if (subtype != null && NeverTiltSubtypes.Contains(subtype)) return;
-            bool whitelisted = subtype != null && CornerLcdSubtypes.Contains(subtype);
 
             var aabb = Entity.PositionComp.LocalAABB;
             float dx = aabb.Max.X - aabb.Min.X;
             float dy = aabb.Max.Y - aabb.Min.Y;
             float dz = aabb.Max.Z - aabb.Min.Z;
-            float thinThreshold = _block.CubeGrid.GridSize * ThinDepthFractionOfGrid;
-
-            bool thinX = dx < thinThreshold;
-            bool thinY = dy < thinThreshold;
-            bool thinZ = dz < thinThreshold;
-
-            // Eligibility: thin on at least one axis, OR whitelisted
-            // corner LCD (whose cube-shaped AABB hides the slant).
-            if (!whitelisted && !(thinX || thinY || thinZ)) return;
 
             // ── Screen-outward direction ──
             // Default: derived from MountPoint.Normal — each Normal

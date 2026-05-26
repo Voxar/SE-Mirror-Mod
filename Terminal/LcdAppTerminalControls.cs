@@ -9,56 +9,50 @@ using IMyTextSurfaceProvider = Sandbox.ModAPI.Ingame.IMyTextSurfaceProvider;
 namespace MirrorCameraMod.Terminal
 {
     /// <summary>
-    /// Per-block terminal-controls dispatcher. Subscribes to SE's
-    /// <see cref="IMyTerminalControls.CustomControlGetter"/> event and,
-    /// for each block whose active surface is running one of this mod's
-    /// scripts, calls the script's own
-    /// <c>InsertCustomControls(controls, anchorIdx)</c> to inject its
-    /// own controls just before the LCD's color pickers (so the
-    /// camera-source / mirror-tilt sliders appear at the most useful
-    /// place in the terminal stack instead of at the bottom).
-    ///
-    /// <para>This dispatcher ALSO removes the LCD's font / background
-    /// color pickers from the list when our script is active — those
-    /// controls are no-ops when a TSS replaces the surface's content,
-    /// so showing them just adds noise.</para>
-    ///
-    /// <para>Pure <c>CustomControlGetter</c> path on purpose: per-block
-    /// runtime mutation, doesn't touch
-    /// <see cref="MyAPIGateway.TerminalControls.AddControl{TBlock}"/>'s
-    /// per-type list, can't trip
-    /// <c>AreControlsCreated&lt;MyTextPanel&gt;</c> and wipe defaults.</para>
+    /// Per-block terminal-controls dispatcher. Controls and actions are
+    /// registered block-level by each owning class's static
+    /// <c>RegisterTerminalControls()</c> via
+    /// <see cref="MyAPIGateway.TerminalControls.AddControl{TBlock}"/>
+    /// — so SE's terminal property table sees them. This dispatcher's
+    /// only jobs are:
+    /// <list type="bullet">
+    ///   <item><b>Color-picker strip + Camera reorder</b> via
+    ///         <see cref="IMyTerminalControls.CustomControlGetter"/>:
+    ///         removes <c>FontColor</c>, <c>BackgroundColor</c>, and
+    ///         their <c>ScriptForeground/Background</c> siblings when
+    ///         our script is active, since TSS-driven surfaces don't
+    ///         render text the FontColor would apply to. Also moves
+    ///         <see cref="CameraScript.ListboxId"/> and
+    ///         <see cref="CameraScript.ZoomId"/> from their
+    ///         end-of-list <c>AddControl</c> position to directly under
+    ///         the "Script" listbox. Pure list mutation only — no new
+    ///         control instances created here, as creating-via-getter
+    ///         caused other issues.</item>
+    ///   <item><b>Per-script action gating</b> via
+    ///         <see cref="IMyTerminalControls.CustomActionGetter"/>:
+    ///         scripts whose actions only make sense for a specific
+    ///         active app (currently Camera's zoom +/-) hand back a
+    ///         list here; the dispatcher appends it when the active
+    ///         surface runs that script.</item>
+    /// </list>
     /// </summary>
     public sealed class LcdAppTerminalControls
     {
-        // Preferred insertion anchor: directly AFTER the "Script"
-        // listbox (= the app-selection list). This is where the user
-        // expects our app-specific controls to land — right under the
-        // dropdown that activated us.
         const string ScriptListId = "Script";
 
-        // Fallback insertion anchors (used only if "Script" isn't in
-        // the callback list for some reason — e.g. SE's order-of-events
-        // changed, or a multi-callback subscriber adds Script after us).
-        // We insert BEFORE whichever of these appears first.
-        static readonly string[] s_insertBeforeFallback =
+        static readonly HashSet<string> s_removeWhenActive = new HashSet<string>
         {
             "ScriptForegroundColor", "ScriptBackgroundColor",
             "FontColor",             "BackgroundColor",
         };
 
-        // Controls REMOVED from the list when our script is active.
-        // Same set as the insertion anchors: when a TSS is driving the
-        // surface, the color pickers don't affect anything.
-        static readonly System.Collections.Generic.HashSet<string> s_removeWhenActive =
-            new System.Collections.Generic.HashSet<string>
-            {
-                "ScriptForegroundColor", "ScriptBackgroundColor",
-                "FontColor",             "BackgroundColor",
-            };
+        static readonly HashSet<string> s_cameraOwnedIds = new HashSet<string>
+        {
+            CameraScript.ListboxId,
+            CameraScript.ZoomId,
+        };
 
         bool _hooked;
-
 
         public void Hook()
         {
@@ -76,105 +70,71 @@ namespace MirrorCameraMod.Terminal
             _hooked = false;
         }
 
-        // ── Dispatch ───────────────────────────────────────────────────
-
         static void OnCustomControlGetter(IMyTerminalBlock block, List<IMyTerminalControl> controls)
         {
-            if (block == null) return;
-            var provider = block as IMyTextSurfaceProvider;
-            if (provider == null || provider.SurfaceCount <= 0) return;
+            var scriptId = GetActiveSurfaceScriptId(block);
+            if (scriptId != MirrorSession.MirrorScriptId
+             && scriptId != MirrorSession.CameraScriptId) return;
 
-            int idx  = ActiveSurfaceIndex(block);
-            if (idx < 0 || idx >= provider.SurfaceCount) return;
+            if (scriptId == MirrorSession.CameraScriptId)
+                RelocateUnderScript(controls, s_cameraOwnedIds);
 
-            var surf = provider.GetSurface(idx);
-            if (surf == null) return;
-            // Surface must actually be running a script (ContentType.SCRIPT)
-            // for our controls to mean anything — surf.Script holds the
-            // last-selected script id even when the surface has been
-            // switched back to TEXT_AND_IMAGE or NONE, which would
-            // otherwise leak Mirror/Camera controls onto non-app surfaces.
-            if (surf.ContentType != ContentType.SCRIPT) return;
-
-            IReadOnlyList<IMyTerminalControl> appControls;
-            if (surf.Script == MirrorSession.MirrorScriptId)
-                appControls = MirrorScript.GetCustomControls();
-            else if (surf.Script == MirrorSession.CameraScriptId)
-                appControls = CameraScript.GetCustomControls();
-            else
-                return;
-
-            int insertAt = FindInsertIndex(controls);
-            for (int i = 0; i < appControls.Count; i++)
-                controls.Insert(insertAt + i, appControls[i]);
-
-            // Remove the now-unused color pickers — TSS-driven surfaces
-            // don't render text the FontColor would apply to, and the
-            // ScriptColor pickers only matter when the user is editing
-            // the script's text settings (which our scripts don't use).
             for (int i = controls.Count - 1; i >= 0; i--)
                 if (s_removeWhenActive.Contains(controls[i].Id))
                     controls.RemoveAt(i);
         }
 
-        static int FindInsertIndex(List<IMyTerminalControl> controls)
+        // Move every control whose Id is in idsToMove from its current
+        // position to directly after the LAST "Script" id in the list
+        // (text panels carry two "Script"s — an inherited
+        // MyFunctionalBlock one at a low index and the user-visible
+        // MyTextPanel one at a high index; we want the latter).
+        // Preserves the moved controls' relative order.
+        static void RelocateUnderScript(List<IMyTerminalControl> controls, HashSet<string> idsToMove)
         {
-            // Primary: right after the LAST "Script" id in the list.
-            // There are TWO controls with this id for text panels — one
-            // typed MyFunctionalBlock (inherited via MyMultiTextPanelComponent.
-            // CreateTerminalControls<MyFunctionalBlock>) at a low index,
-            // and one typed MyTextPanel (added by MyLcdSurfaceComponent's
-            // per-component loop in MyTextPanel.CreateTerminalControls)
-            // at a high index. The high one is the user-visible "App"
-            // listbox; the low one is shadowed. Searching backwards
-            // lands us right after the visible one. (Verified by
-            // dumping MyTerminalControlFactory.m_controls via raw_batch:
-            // both "Script" ids present, differ by generic block type.)
+            // Pull in document order so re-insertion keeps it.
+            var moving = new List<IMyTerminalControl>(idsToMove.Count);
+            for (int i = 0; i < controls.Count; i++)
+                if (idsToMove.Contains(controls[i].Id))
+                    moving.Add(controls[i]);
+            if (moving.Count == 0) return;
             for (int i = controls.Count - 1; i >= 0; i--)
-                if (controls[i].Id == ScriptListId) return i + 1;
-            // Fallback: before the first color picker (also searched
-            // last-first, for the same reason).
+                if (idsToMove.Contains(controls[i].Id))
+                    controls.RemoveAt(i);
+
+            int insertAt = controls.Count;
             for (int i = controls.Count - 1; i >= 0; i--)
-            {
-                var id = controls[i].Id;
-                for (int a = 0; a < s_insertBeforeFallback.Length; a++)
-                    if (id == s_insertBeforeFallback[a]) return i;
-            }
-            return controls.Count;
+                if (controls[i].Id == ScriptListId) { insertAt = i + 1; break; }
+
+            for (int i = 0; i < moving.Count; i++)
+                controls.Insert(insertAt + i, moving[i]);
         }
 
-        // ── Custom action getter ──────────────────────────────────────
-
-        // Fires whenever SE enumerates per-block actions for the toolbar
-        // (via MyTerminalControls.Static.GetActions(block), called from
-        // MyToolbarItemTerminalBlock during binding / activation). Same
-        // dispatch model as controls: detect active script, append the
-        // script's owned actions to the list.
         static void OnCustomActionGetter(IMyTerminalBlock block, List<IMyTerminalAction> actions)
         {
-            if (block == null) return;
-            var provider = block as IMyTextSurfaceProvider;
-            if (provider == null || provider.SurfaceCount <= 0) return;
+            if (GetActiveSurfaceScriptId(block) != MirrorSession.CameraScriptId) return;
 
-            int idx  = ActiveSurfaceIndex(block);
-            if (idx < 0 || idx >= provider.SurfaceCount) return;
-
-            var surf = provider.GetSurface(idx);
-            if (surf == null) return;
-            if (surf.ContentType != ContentType.SCRIPT) return;
-
-            IReadOnlyList<IMyTerminalAction> appActions;
-            if (surf.Script == MirrorSession.MirrorScriptId)
-                appActions = MirrorScript.GetCustomActions();
-            else if (surf.Script == MirrorSession.CameraScriptId)
-                appActions = CameraScript.GetCustomActions();
-            else
-                return;
-
+            var appActions = CameraScript.GetCustomActions();
+            if (appActions == null) return;
             for (int i = 0; i < appActions.Count; i++) actions.Add(appActions[i]);
         }
 
-        // ── Shared helpers ─────────────────────────────────────────────
+        // Returns the script id (e.g. MirrorSession.CameraScriptId) of
+        // whatever script is driving the block's currently-edited
+        // surface, or null when the block is not a surface provider,
+        // the surface is not in SCRIPT content mode, or no script is set.
+        static string GetActiveSurfaceScriptId(IMyTerminalBlock block)
+        {
+            if (block == null) return null;
+            var provider = block as IMyTextSurfaceProvider;
+            if (provider == null || provider.SurfaceCount <= 0) return null;
+            int idx = ActiveSurfaceIndex(block);
+            if (idx < 0 || idx >= provider.SurfaceCount) return null;
+            var surf = provider.GetSurface(idx);
+            if (surf == null) return null;
+            if (surf.ContentType != ContentType.SCRIPT) return null;
+            return surf.Script;
+        }
 
         /// <summary>Resolve the surface the user is currently editing.
         /// Multi-surface blocks expose this via
