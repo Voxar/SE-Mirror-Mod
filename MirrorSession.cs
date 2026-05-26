@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using MirrorCameraMod.Network;
 using MirrorCameraMod.Terminal;
+using Sandbox.Definitions;
 using Sandbox.ModAPI;
 using VRage.Game.Components;
 using VRage.Game.ModAPI;

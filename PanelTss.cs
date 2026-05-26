@@ -85,8 +85,15 @@ namespace MirrorCameraMod
         // (blockId << 4) | (surfaceIdx & 0xF) — surfaceIdx never exceeds
         // 16 on any vanilla LCD, and packing into one long avoids the
         // ValueTuple allocation of (long, int) dict keys.
+        //
+        // s_byLock guards s_byKey. World load instantiates grids on
+        // parallel threads, so multiple PanelTss ctors fire concurrently
+        // and touch s_byKey. Without the lock, Dictionary.Insert NREs
+        // mid-resize when two threads write at once — and SE reports
+        // the propagated TargetInvocationException as "world corrupt".
         static readonly Dictionary<long, PanelTss> s_byKey =
             new Dictionary<long, PanelTss>();
+        static readonly object s_byLock = new object();
 
         static long MakeKey(long blockId, int surfaceIdx)
             => (blockId << 4) | (long)(surfaceIdx & 0xF);
@@ -94,13 +101,15 @@ namespace MirrorCameraMod
         void RegisterForStorageNotify()
         {
             if (m_block == null) return;
-            s_byKey[MakeKey(m_block.EntityId, ResolveSurfaceIdx())] = this;
+            long key = MakeKey(m_block.EntityId, ResolveSurfaceIdx());
+            lock (s_byLock) { s_byKey[key] = this; }
         }
 
         void UnregisterForStorageNotify()
         {
             if (m_block == null) return;
-            s_byKey.Remove(MakeKey(m_block.EntityId, ResolveSurfaceIdx()));
+            long key = MakeKey(m_block.EntityId, ResolveSurfaceIdx());
+            lock (s_byLock) { s_byKey.Remove(key); }
         }
 
         /// <summary>Called by <see cref="Settings.MirrorStorage"/> after
@@ -111,7 +120,10 @@ namespace MirrorCameraMod
         public static void NotifyStorageChanged(long blockId, int surfaceIdx)
         {
             PanelTss tss;
-            if (s_byKey.TryGetValue(MakeKey(blockId, surfaceIdx), out tss))
+            long key = MakeKey(blockId, surfaceIdx);
+            bool found;
+            lock (s_byLock) { found = s_byKey.TryGetValue(key, out tss); }
+            if (found)
             {
                 try { tss.SyncRegistration(); }
                 catch (Exception ex)

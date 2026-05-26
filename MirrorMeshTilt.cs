@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using MirrorCameraMod.Settings;
 using Sandbox.Common.ObjectBuilders;
+using Sandbox.Definitions;
 using Sandbox.ModAPI;
 using VRage.Game.Components;
 using VRage.Game.ModAPI;
@@ -152,16 +153,18 @@ namespace MirrorCameraMod
             }
 
             // Build tilt in BLOCK-LOCAL frame, then left-multiply with
-            // baseLocal. Sign / order copied from the plugin's
-            // ModelTiltApplier — pitch is NEGATED so positive degY
-            // pitches the top toward the viewer, and rYaw * rPitch
-            // means yaw's axis stays the ORIGINAL screen-Up, not the
-            // post-pitch rotated up. Math.Sign(0) puts the pivot at
-            // the centre along that axis — harmless because the
-            // rotation amount on that axis is also zero.
+            // baseLocal. Pivot is on the OPPOSITE side from where the
+            // slider's lean is going: the rotation makes the lean-side
+            // edge swing INTO the block interior (away from the wall),
+            // anchored at the opposite edge. Without the sign flip,
+            // the lean-side became the pivot and the OTHER edge would
+            // swing outward into the wall — visible as the mesh
+            // extruding past the block boundary. Math.Sign(0) puts the
+            // pivot at the centre along that axis — harmless because
+            // the rotation amount on that axis is also zero.
             Vector3 pivot = _localCenter
-                          + Math.Sign(degX) * _halfRight * _localRightUnit
-                          + Math.Sign(degY) * _halfUp    * _localUpUnit;
+                          - Math.Sign(degX) * _halfRight * _localRightUnit
+                          - Math.Sign(degY) * _halfUp    * _localUpUnit;
 
             float yawRad   = degX * Deg2Rad;
             float pitchRad = degY * Deg2Rad;
@@ -182,10 +185,10 @@ namespace MirrorCameraMod
 
         // ── Resolve ──────────────────────────────────────────────────────
 
-        // Vanilla LCDs whose screen face is at 45° (corner LCD top/bottom
-        // variants). They don't reveal the screen orientation through the
-        // AABB — the cube footprint hides the slant — but they're known
-        // to be tilt-friendly. Apply default block-local axes.
+        // Vanilla LCDs whose screen face is at 45° (non-Flat corner
+        // LCD top/bottom variants). They pass eligibility via this
+        // whitelist because their cube-shaped AABB doesn't reveal the
+        // slanted screen geometry through thinness alone.
         private static readonly HashSet<string> CornerLcdSubtypes =
             new HashSet<string>(StringComparer.Ordinal)
             {
@@ -195,6 +198,24 @@ namespace MirrorCameraMod
                 "SmallBlockCorner_LCD_2",
             };
 
+        // Subtypes where screen-right points along block -X instead of
+        // block +X. Empirically determined; the universal rule is that
+        // the pitch axis is always block-local X, but the SIGN of
+        // "screen right" differs for these three. Visual effect: pitch
+        // appears inverted on these blocks — user-acknowledged.
+        private static readonly HashSet<string> ScreenRightFlipSubtypes =
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "LargeBlockCorner_LCD_1",       // LG Corner LCD Top
+                "SmallBlockCorner_LCD_1",       // SG Corner LCD Top
+                "SmallBlockCorner_LCD_2",       // SG Corner LCD Bottom
+                "LargeBlockCorner_LCD_Flat_2",  // LG Corner LCD Flat Bottom
+            };
+
+        // Reused across resolves to avoid per-call allocation.
+        private static readonly Dictionary<string, IMyModelDummy> s_dummyBuf =
+            new Dictionary<string, IMyModelDummy>();
+
         private void ResolveAxes()
         {
             _eligible = false;
@@ -203,10 +224,6 @@ namespace MirrorCameraMod
             string subtype = _block.BlockDefinition.SubtypeName;
             bool whitelisted = subtype != null && CornerLcdSubtypes.Contains(subtype);
 
-            // Screen-normal axis = thinnest local AABB extent. LCDs are
-            // flat by definition. Corner LCD subtypes have 45° screens
-            // that don't manifest in the AABB — they're whitelisted and
-            // fall back to block-local Z (mwm convention default).
             var aabb = Entity.PositionComp.LocalAABB;
             float dx = aabb.Max.X - aabb.Min.X;
             float dy = aabb.Max.Y - aabb.Min.Y;
@@ -217,51 +234,161 @@ namespace MirrorCameraMod
             bool thinY = dy < thinThreshold;
             bool thinZ = dz < thinThreshold;
 
-            if (!whitelisted && !(thinX || thinY || thinZ))
+            // Eligibility: thin on at least one axis, OR whitelisted
+            // corner LCD (whose cube-shaped AABB hides the slant).
+            if (!whitelisted && !(thinX || thinY || thinZ)) return;
+
+            // ── Screen-outward direction from mount points ──
+            // Each MountPoint.Normal points OUT of a mount face. The
+            // screen sits opposite the "default" mount, or the LAST
+            // mount when no default is set. Cardinal axis only — for
+            // the non-Flat corner LCDs whose actual screen is diagonal,
+            // this loses the diagonal component and yaw will have a
+            // partial-roll feel. User-acknowledged trade for keeping
+            // all blocks on the same model.
+            Vector3I mountNormal = FindScreenOutMountNormal();
+            Vector3 screenOut = new Vector3(-mountNormal.X, -mountNormal.Y, -mountNormal.Z);
+            if (screenOut.LengthSquared() < 1e-6f) return;
+            screenOut = Vector3.Normalize(screenOut);
+
+            // ── Screen-right direction ──
+            // Pitch axis is ALWAYS block-local X. Screen-right = +X for
+            // most LCDs; 3 subtypes have it flipped to -X (see
+            // ScreenRightFlipSubtypes). Pitch direction inverts visually
+            // on those — user-acknowledged trade.
+            float rightSign = (subtype != null && ScreenRightFlipSubtypes.Contains(subtype)) ? -1f : +1f;
+            Vector3 screenRight = new Vector3(rightSign, 0, 0);
+
+            // ── Screen-up direction ──
+            // Cross product gives the magnitude direction; the SIGN is
+            // refined by projecting the detector translation onto the
+            // candidate. When the detector sits strongly on one side
+            // of the yaw axis, that side is "up". When the detector is
+            // centred along the yaw axis (e.g. Text Panel LG with
+            // detectorY=0), the projection is ~0 and we trust the
+            // cross product result.
+            Vector3 screenUp = Vector3.Cross(screenOut, screenRight);
+            if (screenUp.LengthSquared() < 1e-6f) return;
+            screenUp = Vector3.Normalize(screenUp);
+
+            Vector3 detectorTranslation = (aabb.Min + aabb.Max) * 0.5f; // fallback
+            Vector3 dt;
+            if (TryGetDetectorTranslation(out dt))
             {
-                // Full-cube LCD (Inset LCD, etc.) — tilting would
-                // intersect neighbours.
-                return;
+                detectorTranslation = dt;
+                float proj = Vector3.Dot(detectorTranslation, screenUp);
+                if (proj < -0.05f) screenUp = -screenUp;
             }
 
-            // Choose the screen-normal axis.
-            float minD = Math.Min(dx, Math.Min(dy, dz));
-            int normalAxis;  // 0=X, 1=Y, 2=Z
-            if (whitelisted && !(thinX || thinY || thinZ))      normalAxis = 2;
-            else if (dx == minD)                                normalAxis = 0;
-            else if (dy == minD)                                normalAxis = 1;
-            else                                                normalAxis = 2;
-
-            // Assign screen Right and Up to the two remaining block axes.
-            // Convention: yaw around the axis closer to "up" (block Y
-            // when available, else Z) and pitch around the other. The
-            // half-extents along Right/Up come straight from the AABB.
-            _localCenter = (aabb.Min + aabb.Max) * 0.5f;
-            switch (normalAxis)
+            // ── Half-extents from AABB projection, clamped to block ──
+            // Block cube footprint is block.Size * gridSize. The pivot
+            // must not extend past the cube boundary, so the half-
+            // extents along screen-right / screen-up are clamped to
+            // the block's projected half-size along those directions.
+            float blockHalfX = 0.5f * _block.CubeGrid.GridSize;
+            float blockHalfY = 0.5f * _block.CubeGrid.GridSize;
+            float blockHalfZ = 0.5f * _block.CubeGrid.GridSize;
+            MyCubeBlockDefinition cubeDef;
+            if (MyDefinitionManager.Static.TryGetDefinition<MyCubeBlockDefinition>(
+                    _block.BlockDefinition, out cubeDef) && cubeDef != null)
             {
-                case 0: // screen normal = block X
-                    _localRightUnit = new Vector3(0, 0, 1);   // block Z
-                    _localUpUnit    = new Vector3(0, 1, 0);   // block Y
-                    _halfRight      = dz * 0.5f;
-                    _halfUp         = dy * 0.5f;
-                    _outwardSign    = aabb.Max.X >= -aabb.Min.X ? +1f : -1f;
-                    break;
-                case 1: // screen normal = block Y
-                    _localRightUnit = new Vector3(1, 0, 0);   // block X
-                    _localUpUnit    = new Vector3(0, 0, 1);   // block Z
-                    _halfRight      = dx * 0.5f;
-                    _halfUp         = dz * 0.5f;
-                    _outwardSign    = aabb.Max.Y >= -aabb.Min.Y ? +1f : -1f;
-                    break;
-                default: // screen normal = block Z (vanilla LCDs)
-                    _localRightUnit = new Vector3(1, 0, 0);   // block X
-                    _localUpUnit    = new Vector3(0, 1, 0);   // block Y
-                    _halfRight      = dx * 0.5f;
-                    _halfUp         = dy * 0.5f;
-                    _outwardSign    = aabb.Max.Z >= -aabb.Min.Z ? +1f : -1f;
-                    break;
+                blockHalfX = cubeDef.Size.X * _block.CubeGrid.GridSize * 0.5f;
+                blockHalfY = cubeDef.Size.Y * _block.CubeGrid.GridSize * 0.5f;
+                blockHalfZ = cubeDef.Size.Z * _block.CubeGrid.GridSize * 0.5f;
             }
-            _eligible = true;
+
+            float aabbHalfRight  = ProjectHalfExtent(screenRight, dx, dy, dz);
+            float aabbHalfUp     = ProjectHalfExtent(screenUp,    dx, dy, dz);
+            float blockHalfRight = ProjectHalfExtent(screenRight, blockHalfX * 2f, blockHalfY * 2f, blockHalfZ * 2f);
+            float blockHalfUp    = ProjectHalfExtent(screenUp,    blockHalfX * 2f, blockHalfY * 2f, blockHalfZ * 2f);
+
+            _localCenter    = detectorTranslation;
+            _localRightUnit = screenRight;
+            _localUpUnit    = screenUp;
+            _halfRight      = Math.Min(aabbHalfRight, blockHalfRight);
+            _halfUp         = Math.Min(aabbHalfUp,    blockHalfUp);
+            _outwardSign    = +1f; // signs already baked into screenRight / screenUp
+            _eligible       = true;
+        }
+
+        // Pick the mount-point Normal whose negation gives the screen-
+        // outward direction. Prefer mount.Default=true; otherwise fall
+        // back to the LAST mount in the array (SE's own auto-rotate
+        // selection when no default is marked).
+        private Vector3I FindScreenOutMountNormal()
+        {
+            MyCubeBlockDefinition cubeDef;
+            if (!MyDefinitionManager.Static.TryGetDefinition<MyCubeBlockDefinition>(
+                    _block.BlockDefinition, out cubeDef) || cubeDef == null)
+                return new Vector3I(0, 0, -1);
+
+            var mounts = cubeDef.MountPoints;
+            if (mounts == null || mounts.Length == 0)
+                return new Vector3I(0, 0, -1);
+
+            for (int i = 0; i < mounts.Length; i++)
+                if (mounts[i].Default) return mounts[i].Normal;
+            return mounts[mounts.Length - 1].Normal;
+        }
+
+        // Detector dummy's translation is the trusted screen-centre
+        // anchor (the rest of the matrix is unreliable per empirical
+        // tests). Looks for detector_textpanel* first, falls back to
+        // detector_terminal* (HoloLCD / ConsoleModule variants).
+        private bool TryGetDetectorTranslation(out Vector3 translation)
+        {
+            translation = Vector3.Zero;
+            IMyModelDummy dummy;
+            if (!TryGetDetectorDummy(out dummy)) return false;
+            translation = dummy.Matrix.Translation;
+            return true;
+        }
+
+        // Direction-only signal from the detector dummy's Forward axis.
+        // Used only for the 4 non-Flat corner LCDs whose screen normal
+        // is genuinely diagonal — the dummy's Forward direction is the
+        // diagonal screen-outward direction in block-local frame.
+        // Magnitude unreliable, so callers normalize.
+        private bool TryGetDetectorForward(out Vector3 forward)
+        {
+            forward = Vector3.Zero;
+            IMyModelDummy dummy;
+            if (!TryGetDetectorDummy(out dummy)) return false;
+            forward = dummy.Matrix.Forward;
+            return true;
+        }
+
+        private bool TryGetDetectorDummy(out IMyModelDummy dummy)
+        {
+            dummy = null;
+            var model = Entity?.Model;
+            if (model == null) return false;
+
+            s_dummyBuf.Clear();
+            try { model.GetDummies(s_dummyBuf); }
+            catch { return false; }
+            if (s_dummyBuf.Count == 0) return false;
+
+            foreach (var kv in s_dummyBuf)
+            {
+                string n = kv.Key;
+                if (n == null) continue;
+                if (n.StartsWith("detector_textpanel", StringComparison.OrdinalIgnoreCase)
+                 || n.StartsWith("detector_terminal",  StringComparison.OrdinalIgnoreCase))
+                {
+                    dummy = kv.Value;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Max |dot(v, d)| over the AABB vertices = |d.X|*halfX + |d.Y|*halfY + |d.Z|*halfZ.
+        private static float ProjectHalfExtent(Vector3 d, float dx, float dy, float dz)
+        {
+            return Math.Abs(d.X) * dx * 0.5f
+                 + Math.Abs(d.Y) * dy * 0.5f
+                 + Math.Abs(d.Z) * dz * 0.5f;
         }
 
         private void WriteAndRefresh(ref Matrix local)
