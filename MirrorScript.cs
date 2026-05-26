@@ -53,6 +53,7 @@ namespace MirrorCameraMod
                 Zoom            = 1f,
                 MirrorAngleDegX = entity != null ? MirrorStorage.GetMirrorAngleX(entity, idx) : 0f,
                 MirrorAngleDegY = entity != null ? MirrorStorage.GetMirrorAngleY(entity, idx) : 0f,
+                MirrorAngleDegZ = entity != null ? MirrorStorage.GetMirrorAngleZ(entity, idx) : 0f,
             };
             return true;
         }
@@ -117,14 +118,26 @@ namespace MirrorCameraMod
             if (s_blockControlsRegistered) return;
             s_blockControlsRegistered = true;
 
-            var yaw   = CreateAngleSlider(yaw: true);
-            var pitch = CreateAngleSlider(yaw: false);
+            var yaw = CreateAngleSlider("Mirror.Yaw", "Yaw",
+                "Tilt the screen left/right.",
+                (b, idx) => MirrorStorage.GetMirrorAngleX(b, idx),
+                (b, idx, v) => MirrorStorage.SetMirrorAngleX(b, idx, v));
+            var pitch = CreateAngleSlider("Mirror.Pitch", "Pitch",
+                "Tilt the screen up/down.",
+                (b, idx) => MirrorStorage.GetMirrorAngleY(b, idx),
+                (b, idx, v) => MirrorStorage.SetMirrorAngleY(b, idx, v));
+            var roll = CreateAngleSlider("Mirror.Roll", "Roll",
+                "Rotate the screen around its normal axis.",
+                (b, idx) => MirrorStorage.GetMirrorAngleZ(b, idx),
+                (b, idx, v) => MirrorStorage.SetMirrorAngleZ(b, idx, v));
             MyAPIGateway.TerminalControls.AddControl<IMyTextPanel>(yaw);
             MyAPIGateway.TerminalControls.AddControl<IMyTextPanel>(pitch);
+            MyAPIGateway.TerminalControls.AddControl<IMyTextPanel>(roll);
 
             var actions = new List<IMyTerminalAction>();
             AddSliderActions(actions, "Mirror.Yaw",   "Yaw",   yaw,   step: 5f, reset: 0f);
             AddSliderActions(actions, "Mirror.Pitch", "Pitch", pitch, step: 5f, reset: 0f);
+            AddSliderActions(actions, "Mirror.Roll",  "Roll",  roll,  step: 5f, reset: 0f);
             foreach (var a in actions)
                 MyAPIGateway.TerminalControls.AddAction<IMyTextPanel>(a);
         }
@@ -170,16 +183,15 @@ namespace MirrorCameraMod
             return v;
         }
 
-        // Both axis sliders share the same shape: identical limits,
-        // identical formatting, different storage axis. One factory
-        // keeps the visible diff to the two function pointers.
-        static IMyTerminalControlSlider CreateAngleSlider(bool yaw)
+        // All angle sliders share the same shape: identical limits,
+        // identical formatting, different storage axis. The factory
+        // takes the storage accessor pair so callers can wire each
+        // slider to its own MirrorAngle{X,Y,Z} field.
+        static IMyTerminalControlSlider CreateAngleSlider(
+            string id, string title, string tip,
+            System.Func<IMyTerminalBlock, int, float> get,
+            System.Action<IMyTerminalBlock, int, float> set)
         {
-            var id    = yaw ? "Mirror.Yaw" : "Mirror.Pitch";
-            var title = yaw ? "Yaw"   : "Pitch";
-            var tip   = yaw ? "Tilt the screen left/right."
-                            : "Tilt the screen up/down.";
-
             // We don't know the TBlock at compile time here — the
             // CustomControlGetter callback gives us a generic
             // IMyTerminalBlock. Use that as TBlock; SE's IsTypeValid
@@ -194,20 +206,11 @@ namespace MirrorCameraMod
             sl.SetLimits(
                 _ => -PanelRegistry.MirrorMaxTiltDeg,
                 _ => +PanelRegistry.MirrorMaxTiltDeg);
-            sl.Getter = b => yaw
-                ? MirrorStorage.GetMirrorAngleX(b, LcdAppTerminalControls.ActiveSurfaceIndex(b))
-                : MirrorStorage.GetMirrorAngleY(b, LcdAppTerminalControls.ActiveSurfaceIndex(b));
-            sl.Setter = (b, v) =>
-            {
-                int idx = LcdAppTerminalControls.ActiveSurfaceIndex(b);
-                if (yaw) MirrorStorage.SetMirrorAngleX(b, idx, v);
-                else     MirrorStorage.SetMirrorAngleY(b, idx, v);
-            };
+            sl.Getter = b => get(b, LcdAppTerminalControls.ActiveSurfaceIndex(b));
+            sl.Setter = (b, v) => set(b, LcdAppTerminalControls.ActiveSurfaceIndex(b), v);
             sl.Writer = (b, sb) =>
             {
-                float v = yaw
-                    ? MirrorStorage.GetMirrorAngleX(b, LcdAppTerminalControls.ActiveSurfaceIndex(b))
-                    : MirrorStorage.GetMirrorAngleY(b, LcdAppTerminalControls.ActiveSurfaceIndex(b));
+                float v = get(b, LcdAppTerminalControls.ActiveSurfaceIndex(b));
                 sb.Append(v.ToString("+0.#;-0.#;0", CultureInfo.InvariantCulture)).Append('°');
             };
             sl.Visible = IsTiltEligible;

@@ -64,7 +64,7 @@ namespace MirrorCameraMod
         // panel always opens outward regardless of which way the block
         // faces in its local frame.
         private float   _outwardSign;
-        private float   _lastDegX, _lastDegY;
+        private float   _lastDegX, _lastDegY, _lastDegZ;
         private bool    _tilted;
 
         public override void Init(MyObjectBuilder_EntityBase objectBuilder)
@@ -111,7 +111,8 @@ namespace MirrorCameraMod
             // Vanilla IMyTextPanel = single surface.
             float degX = MirrorStorage.GetMirrorAngleX(Entity, 0);
             float degY = MirrorStorage.GetMirrorAngleY(Entity, 0);
-            Apply(degX, degY);
+            float degZ = MirrorStorage.GetMirrorAngleZ(Entity, 0);
+            Apply(degX, degY, degZ);
         }
 
         public override void Close()
@@ -134,12 +135,12 @@ namespace MirrorCameraMod
             base.Close();
         }
 
-        private void Apply(float degX, float degY)
+        private void Apply(float degX, float degY, float degZ)
         {
             if (!_eligible) return;
-            if (degX == _lastDegX && degY == _lastDegY) return;
+            if (degX == _lastDegX && degY == _lastDegY && degZ == _lastDegZ) return;
 
-            if (degX == 0f && degY == 0f)
+            if (degX == 0f && degY == 0f && degZ == 0f)
             {
                 if (_tilted)
                 {
@@ -149,45 +150,81 @@ namespace MirrorCameraMod
                 }
                 _lastDegX = 0f;
                 _lastDegY = 0f;
+                _lastDegZ = 0f;
                 return;
             }
 
             // Slider semantics: increasing pitch tilts the screen TOP
             // toward the viewer; increasing yaw swings the screen to
-            // the viewer's right. Internal rotation math produces the
-            // opposite direction by default, so apply the negated
-            // slider values. The original degX / degY remain in the
+            // the viewer's right; increasing roll banks the screen
+            // clockwise from the viewer's POV. Internal rotation math
+            // produces the opposite direction by default, so apply
+            // the negated slider values. The originals remain in the
             // cache below so the equality check matches slider values
             // one-to-one.
             float applyX = -degX;
             float applyY = -degY;
+            float applyZ = -degZ;
 
-            // Build tilt in BLOCK-LOCAL frame, then left-multiply with
-            // baseLocal. Pivot is on the OPPOSITE side from where the
-            // lean is going: the rotation makes the lean-side edge
-            // swing INTO the block interior (away from the wall),
-            // anchored at the opposite edge. Math.Sign(0) puts the
-            // pivot at the centre along that axis — harmless because
-            // the rotation amount on that axis is also zero.
-            Vector3 pivot = _localCenter
+            // Yaw/pitch pivot: opposite side from the lean direction.
+            Vector3 yawPitchPivot = _localCenter
                           - Math.Sign(applyX) * _halfRight * _localRightUnit
                           - Math.Sign(applyY) * _halfUp    * _localUpUnit;
 
+            // Roll pivot: for "edge-mounted" panels (mesh hugs one
+            // side of the block along screen Up or Right), roll
+            // pivots at the corner where the panel meets the block
+            // boundary — sign(degZ) picks the left vs right corner
+            // along screen Right. For centred panels, roll uses
+            // screen centre (an in-plane spin around the middle).
+            const float EdgeOffsetThreshold = 0.05f;
+            float meshUpProj    = Vector3.Dot(_localCenter, _localUpUnit);
+            float meshRightProj = Vector3.Dot(_localCenter, _localRightUnit);
+            float upEdgeSign    = Math.Abs(meshUpProj)    > EdgeOffsetThreshold ? Math.Sign(meshUpProj)    : 0f;
+            float rightEdgeSign = Math.Abs(meshRightProj) > EdgeOffsetThreshold ? Math.Sign(meshRightProj) : 0f;
+            Vector3 rollPivot;
+            if (upEdgeSign != 0f || rightEdgeSign != 0f)
+            {
+                // Anchor at the block-boundary edge on whichever axis
+                // the mesh is offset; flip across screen-right based
+                // on sign(degZ) so roll+ → left corner, roll- → right.
+                rollPivot = _localCenter
+                          + upEdgeSign    * _halfUp    * _localUpUnit
+                          + rightEdgeSign * _halfRight * _localRightUnit
+                          + (-Math.Sign(degZ)) * _halfRight * _localRightUnit;
+            }
+            else
+            {
+                rollPivot = _localCenter;
+            }
+
+            Vector3 screenNormal = Vector3.Cross(_localRightUnit, _localUpUnit);
+
             float yawRad   = applyX * Deg2Rad;
             float pitchRad = applyY * Deg2Rad;
+            float rollRad  = applyZ * Deg2Rad;
 
             Matrix rYaw   = Matrix.CreateFromAxisAngle(_localUpUnit,    -yawRad   * _outwardSign);
             Matrix rPitch = Matrix.CreateFromAxisAngle(_localRightUnit, pitchRad * _outwardSign);
-            Matrix tilt   = Matrix.CreateTranslation(-pivot)
-                          * rPitch * rYaw
-                          * Matrix.CreateTranslation(pivot);
+            Matrix rRoll  = Matrix.CreateFromAxisAngle(screenNormal,    rollRad);
 
-            Matrix tilted = Matrix.Normalize(tilt * _baseLocal);
+            // Roll first (in-plane around rollPivot), then yaw/pitch
+            // (3D tilt around the lean corner). Row-vector convention:
+            // M1 * M2 applies M1 first.
+            Matrix rollMtx = Matrix.CreateTranslation(-rollPivot)
+                           * rRoll
+                           * Matrix.CreateTranslation(rollPivot);
+            Matrix ypMtx   = Matrix.CreateTranslation(-yawPitchPivot)
+                           * rPitch * rYaw
+                           * Matrix.CreateTranslation(yawPitchPivot);
+
+            Matrix tilted = Matrix.Normalize(rollMtx * ypMtx * _baseLocal);
 
             WriteAndRefresh(ref tilted);
             _tilted   = true;
             _lastDegX = degX;
             _lastDegY = degY;
+            _lastDegZ = degZ;
         }
 
         // ── Resolve ──────────────────────────────────────────────────────

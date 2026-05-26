@@ -243,7 +243,7 @@ namespace MirrorCameraMod
                 PanelRegistry.AddOrUpdate(
                     m_block, ResolveSurfaceIdx(), m_surface,
                     reg.Mode, reg.CameraBlock, reg.Zoom,
-                    reg.MirrorAngleDegX, reg.MirrorAngleDegY);
+                    reg.MirrorAngleDegX, reg.MirrorAngleDegY, reg.MirrorAngleDegZ);
                 m_isRegistered = true;
             }
             else if (m_isRegistered)
@@ -402,5 +402,8 @@ namespace MirrorCameraMod
         /// normal before reflection (degrees, positive = toward screen
         /// Up). 0 for non-mirror modes.</summary>
         public float MirrorAngleDegY;
+        /// <summary>Mirror mode: roll around the screen-normal axis
+        /// (degrees, in-plane rotation). 0 for non-mirror modes.</summary>
+        public float MirrorAngleDegZ;
     }
 }

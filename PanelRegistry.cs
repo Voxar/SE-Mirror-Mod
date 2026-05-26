@@ -55,6 +55,9 @@ namespace MirrorCameraMod
             /// mirror reflection (degrees, positive = tilt toward screen
             /// Up). Mirror mode only; ignored in Camera mode.</summary>
             public float          MirrorAngleDegY;
+            /// <summary>Roll applied around the screen-normal axis
+            /// (degrees, in-plane rotation). Mirror mode only.</summary>
+            public float          MirrorAngleDegZ;
         }
 
         // IEquatable<Key> so the dictionary's lookup path stays on the
@@ -99,7 +102,7 @@ namespace MirrorCameraMod
         public static void AddOrUpdate(IMyCubeBlock block, int surfaceIdx,
             IMyTextSurface surface, PanelMode mode,
             IMyCubeBlock cameraBlock, float zoom,
-            float mirrorAngleDegX, float mirrorAngleDegY)
+            float mirrorAngleDegX, float mirrorAngleDegY, float mirrorAngleDegZ)
         {
             if (block == null || surface == null) return;
             var k = new Key { BlockId = block.EntityId, SurfaceIdx = surfaceIdx };
@@ -112,6 +115,7 @@ namespace MirrorCameraMod
                 Zoom            = zoom,
                 MirrorAngleDegX = mirrorAngleDegX,
                 MirrorAngleDegY = mirrorAngleDegY,
+                MirrorAngleDegZ = mirrorAngleDegZ,
             };
             RebuildSnapshot();
         }

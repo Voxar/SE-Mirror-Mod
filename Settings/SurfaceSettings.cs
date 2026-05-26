@@ -38,6 +38,7 @@ namespace MirrorCameraMod.Settings
         [ProtoMember(3)] public float Range           = DefaultRange;
         [ProtoMember(4)] public float MirrorAngleDegX;   // yaw   — tilt around screen Up
         [ProtoMember(5)] public float MirrorAngleDegY;   // pitch — tilt around screen Right
+        [ProtoMember(6)] public float MirrorAngleDegZ;   // roll  — tilt around screen Normal
 
         // ── Clamp helpers ───────────────────────────────────────────────
 
@@ -59,6 +60,7 @@ namespace MirrorCameraMod.Settings
                 Range           = Range,
                 MirrorAngleDegX = MirrorAngleDegX,
                 MirrorAngleDegY = MirrorAngleDegY,
+                MirrorAngleDegZ = MirrorAngleDegZ,
             };
     }
 }

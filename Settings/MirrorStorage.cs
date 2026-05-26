@@ -65,6 +65,9 @@ namespace MirrorCameraMod.Settings
         public static float GetMirrorAngleY(IMyEntity entity, int surfaceIdx)
             => SurfaceSettings.ClampMirrorAngle(Get(entity, surfaceIdx).MirrorAngleDegY);
 
+        public static float GetMirrorAngleZ(IMyEntity entity, int surfaceIdx)
+            => SurfaceSettings.ClampMirrorAngle(Get(entity, surfaceIdx).MirrorAngleDegZ);
+
         /// <summary>Returns the current settings for the given surface.
         /// Never null — defaults are returned if no entry exists.
         /// Server first-touch checks the entity's storage component
@@ -134,6 +137,14 @@ namespace MirrorCameraMod.Settings
             var cur = TakeForMutation(entity, surfaceIdx);
             if (cur == null) return;
             cur.MirrorAngleDegY = SurfaceSettings.ClampMirrorAngle(deg);
+            CommitAndPublish(entity, surfaceIdx, cur);
+        }
+
+        public static void SetMirrorAngleZ(IMyEntity entity, int surfaceIdx, float deg)
+        {
+            var cur = TakeForMutation(entity, surfaceIdx);
+            if (cur == null) return;
+            cur.MirrorAngleDegZ = SurfaceSettings.ClampMirrorAngle(deg);
             CommitAndPublish(entity, surfaceIdx, cur);
         }
 
