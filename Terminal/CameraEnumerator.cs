@@ -79,6 +79,35 @@ namespace MirrorCameraMod.Terminal
             }
         }
 
+        /// <summary>Cycle the surface's selected camera by
+        /// <paramref name="direction"/> (+1 for next, -1 for previous),
+        /// wrapping at the list ends. Persists via
+        /// <see cref="Settings.MirrorStorage.SetCameraId"/> — the next
+        /// render tick picks up the new selection. No-op when no
+        /// cameras exist on the mechanical group.</summary>
+        public static void CycleSelectedCamera(
+            IMyTerminalBlock block, int surfaceIdx, int direction)
+        {
+            if (block == null || direction == 0) return;
+            var cameras = GatherCameras(block);
+            if (cameras.Count == 0) return;
+
+            long currentId = Settings.MirrorStorage.GetCameraId(block, surfaceIdx);
+            int currentIdx = -1;
+            for (int i = 0; i < cameras.Count; i++)
+                if (cameras[i].EntityId == currentId) { currentIdx = i; break; }
+
+            // currentIdx == -1 when nothing is selected (or the stored
+            // id no longer exists). Treat as "before first" so +1 picks
+            // the first camera and -1 picks the last.
+            int n = cameras.Count;
+            int nextIdx = currentIdx < 0
+                ? (direction > 0 ? 0 : n - 1)
+                : ((currentIdx + direction) % n + n) % n;
+
+            Settings.MirrorStorage.SetCameraId(block, surfaceIdx, cameras[nextIdx].EntityId);
+        }
+
         /// <summary>
         /// Camera id for a surface: the stored selection if non-zero,
         /// otherwise the first available camera on the mechanical group

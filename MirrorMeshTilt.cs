@@ -77,12 +77,12 @@ namespace MirrorCameraMod
         {
             base.UpdateOnceBeforeFrame();
 
-            // Register block-level tilt controls and Camera controls
-            // on first call. Idempotent (static flag inside each).
-            try { TiltTerminalControls.RegisterTerminalControls(); CameraScript.RegisterTerminalControls(); }
+            // Tilt controls register on first text-panel frame.
+            // Idempotent (static flag inside TiltTerminalControls).
+            try { TiltTerminalControls.RegisterTerminalControls(); }
             catch (Exception ex)
             {
-                MyLog.Default.WriteLine("[MirrorMod] Register controls failed: " + ex);
+                MyLog.Default.WriteLine("[MirrorMod] Tilt controls registration failed: " + ex);
             }
 
             if (_block?.CubeGrid?.Physics == null) return; // projected / preview

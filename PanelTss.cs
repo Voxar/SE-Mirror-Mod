@@ -130,6 +130,41 @@ namespace MirrorCameraMod
                 {
                     MyLog.Default.WriteLine("[MirrorMod] NotifyStorageChanged sync failed: " + ex);
                 }
+                return;
+            }
+
+            // No PanelTss is keyed by this entity — likely a camera
+            // block (storage written by the camera-zoom slider, the
+            // CameraOwnZoom-changed PB property, or remote sync).
+            // Notify every panel so any that's displaying this camera
+            // re-syncs immediately rather than waiting up to one
+            // Update100 cycle (~1.67 s) for its periodic re-sync.
+            // SyncRegistration is idempotent — panels not affected
+            // see no observable change.
+            VRage.ModAPI.IMyEntity ent;
+            if (Sandbox.ModAPI.MyAPIGateway.Entities != null
+                && Sandbox.ModAPI.MyAPIGateway.Entities.TryGetEntityById(blockId, out ent)
+                && ent is Sandbox.ModAPI.IMyCameraBlock)
+            {
+                NotifyAllPanels();
+            }
+        }
+
+        static void NotifyAllPanels()
+        {
+            PanelTss[] all;
+            lock (s_byLock)
+            {
+                all = new PanelTss[s_byKey.Count];
+                s_byKey.Values.CopyTo(all, 0);
+            }
+            for (int i = 0; i < all.Length; i++)
+            {
+                try { all[i].SyncRegistration(); }
+                catch (Exception ex)
+                {
+                    MyLog.Default.WriteLine("[MirrorMod] NotifyAllPanels sync failed: " + ex);
+                }
             }
         }
 

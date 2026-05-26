@@ -7,10 +7,12 @@ using Sandbox.ModAPI.Interfaces.Terminal;
 using VRage.ModAPI;
 using VRage.Utils;
 using VRageMath;
-using IMyTextSurface   = Sandbox.ModAPI.Ingame.IMyTextSurface;
-using IMyCubeBlock     = VRage.Game.ModAPI.Ingame.IMyCubeBlock;
-using IMyTerminalBlock = Sandbox.ModAPI.IMyTerminalBlock;
-using IMyCameraBlock   = Sandbox.ModAPI.IMyCameraBlock;
+using IMyTextSurface       = Sandbox.ModAPI.Ingame.IMyTextSurface;
+using IMyCubeBlock         = VRage.Game.ModAPI.Ingame.IMyCubeBlock;
+using IMyTerminalBlock     = Sandbox.ModAPI.IMyTerminalBlock;
+using IMyCameraBlock       = Sandbox.ModAPI.IMyCameraBlock;
+using IMyCockpit           = Sandbox.ModAPI.IMyCockpit;
+using IMyProgrammableBlock = Sandbox.ModAPI.IMyProgrammableBlock;
 
 namespace MirrorCameraMod
 {
@@ -26,17 +28,28 @@ namespace MirrorCameraMod
     /// removed from PanelRegistry) and the splash subtitle reads
     /// "Camera offline" instead of the plugin status.</para>
     ///
-    /// <para>Owns the <b>Camera Source</b> listbox and the <b>Camera
-    /// Zoom</b> slider, both registered block-level via
-    /// <see cref="RegisterTerminalControls"/> and gated by
-    /// <see cref="IsCameraSurface"/>. <see cref="LcdAppTerminalControls"/>
-    /// reorders them to land directly under the "Script" listbox.</para>
+    /// <para>Owns the <b>Camera Source</b> listbox, the <b>Override
+    /// Camera Zoom</b> checkbox (default off; flipping it on reveals
+    /// the per-screen <b>Camera View Zoom</b> slider and routes the
+    /// renderer to its value instead of the camera block's own zoom),
+    /// the <b>Camera View Zoom</b> slider, plus the hidden
+    /// <see cref="CameraIdPropertyId"/> property exposing the selected
+    /// camera's entity id to programmable-block scripts. Registered on
+    /// every terminal-block type that hosts a text-surface app (text
+    /// panels, cockpits, programmable blocks), gated by
+    /// <see cref="IsCameraSurface"/>.
+    /// <see cref="LcdAppTerminalControls"/> reorders the visible
+    /// controls to land directly under the "Script" listbox and emits
+    /// toolbar actions only for single-surface blocks (multi-surface
+    /// blocks rely on the camera-block zoom slider instead).</para>
     /// </summary>
     [MyTextSurfaceScript(MirrorSession.CameraScriptId, "Camera")]
     public class CameraScript : PanelTss
     {
-        public const string ListboxId = "Mirror.Camera";
-        public const string ZoomId    = "Mirror.Zoom";
+        public const string ListboxId             = "Mirror.Camera.List";
+        public const string ZoomId                = "Mirror.Zoom";
+        public const string OverrideCameraZoomId  = "Mirror.OverrideCameraZoom";
+        public const string CameraIdPropertyId    = "Mirror.Camera";
 
         IMyCameraBlock m_cameraBlock;       // last sync's resolved camera (null when offline)
         string         m_title = "Camera";  // last sync's resolved camera CustomName
@@ -77,6 +90,12 @@ namespace MirrorCameraMod
         /// <see cref="MirrorSession"/>'s per-entity storage. Returns
         /// the resolved <see cref="IMyCameraBlock"/> when a camera is
         /// selected AND its block is working; <c>null</c> otherwise.
+        ///
+        /// <para>Zoom resolution: if <c>OverrideCameraZoom</c> is true
+        /// on this surface, takes the per-screen override
+        /// <see cref="MirrorStorage.GetZoom"/>; otherwise (the
+        /// default) takes the camera block's own zoom from
+        /// <see cref="MirrorStorage.GetCameraOwnZoom"/>.</para>
         /// </summary>
         IMyCameraBlock ResolveCameraState(out float zoom, out string title)
         {
@@ -86,11 +105,7 @@ namespace MirrorCameraMod
             var entity = m_block as IMyEntity;
             if (entity == null) return null;
 
-            // Effective id (stored if set, else first camera on grid) so
-            // a freshly-selected Camera app renders without the user
-            // having to open the listbox and pick.
             long camId = MirrorSession.GetEffectiveCameraId(entity, idx);
-            zoom  = MirrorSession.GetSelectedZoom(entity, idx);
             if (camId == 0L) return null;
 
             IMyEntity camEnt;
@@ -100,6 +115,10 @@ namespace MirrorCameraMod
             var cam = camEnt as IMyCameraBlock;
             if (cam == null) return null;
             if (!string.IsNullOrEmpty(cam.CustomName)) title = cam.CustomName;
+
+            zoom = MirrorStorage.GetOverrideCameraZoom(entity, idx)
+                ? MirrorSession.GetSelectedZoom(entity, idx)
+                : MirrorStorage.GetCameraOwnZoom(camEnt);
 
             var func = camEnt as Sandbox.ModAPI.IMyFunctionalBlock;
             if (func == null || !func.IsWorking) return null;
@@ -111,10 +130,11 @@ namespace MirrorCameraMod
 
         static bool s_registered;
         static List<IMyTerminalAction> s_actions;
-        // Held so the listbox ItemSelected callback can call
-        // UpdateVisual on it — picking a camera changes the slider's
-        // gating predicate, but SE only re-evaluates Visible on
-        // explicit UpdateVisual.
+        // Held so the listbox / checkbox callbacks can call
+        // UpdateVisual on the slider — picking a camera or flipping
+        // the checkbox changes the slider's gating predicate, but SE
+        // only re-evaluates Visible on explicit UpdateVisual.
+        // Any one block-type instance suffices.
         static IMyTerminalControlSlider s_zoom;
 
         const string ZoomFormat = "0.0";
@@ -124,29 +144,87 @@ namespace MirrorCameraMod
         {
             if (s_registered) return;
             s_registered = true;
-            var listbox = CreateListbox();
-            s_zoom = CreateZoomSlider();
-            MyAPIGateway.TerminalControls.AddControl<IMyTextPanel>(listbox);
-            MyAPIGateway.TerminalControls.AddControl<IMyTextPanel>(s_zoom);
 
-            // Only zoom is action-bindable. Listbox selection is naturally
-            // a one-shot UI interaction; no Increase/Decrease semantics.
-            // Actions stay script-gated through LcdAppTerminalControls'
-            // CustomActionGetter (vs AddAction, which has no Visible
-            // predicate) so they only appear in toolbar binding UI when
-            // the Camera app is the active script on the edited surface.
+            // Per-block-type AddControl on every terminal-block type
+            // that hosts a text-surface app. Each gets its own
+            // listbox / slider / checkbox / property instance —
+            // sharing a single instance across types would let the
+            // ItemSelected closure refresh only one type's terminal
+            // at a time.
+            RegisterPerSurfaceProvider<IMyTextPanel>();
+            RegisterPerSurfaceProvider<IMyCockpit>();
+            RegisterPerSurfaceProvider<IMyProgrammableBlock>();
+
+            // Actions are gated to single-surface blocks (see
+            // LcdAppTerminalControls.OnCustomActionGetter) and use the
+            // generic non-indexed names, since the only block class
+            // emitting them is a text panel where surface index is
+            // always 0.
             s_actions = new List<IMyTerminalAction>();
             s_actions.Add(SliderHelpers.BuildSliderAction(
-                "Mirror.Zoom.Increase", "Increase Camera Zoom", "Increase",
-                s_zoom, b => SliderHelpers.Clamp(s_zoom, b, s_zoom.Getter(b) + 0.5f),
+                "Mirror.Zoom.Increase", "Increase Camera View Zoom", "Increase",
+                s_zoom, b => SliderHelpers.Clamp(s_zoom, b, s_zoom.Getter(b) + 1f),
                 ZoomFormat, ZoomUnit));
             s_actions.Add(SliderHelpers.BuildSliderAction(
-                "Mirror.Zoom.Decrease", "Decrease Camera Zoom", "Decrease",
-                s_zoom, b => SliderHelpers.Clamp(s_zoom, b, s_zoom.Getter(b) - 0.5f),
+                "Mirror.Zoom.Decrease", "Decrease Camera View Zoom", "Decrease",
+                s_zoom, b => SliderHelpers.Clamp(s_zoom, b, s_zoom.Getter(b) - 1f),
                 ZoomFormat, ZoomUnit));
+            s_actions.Add(BuildCycleAction("Mirror.Camera.Next",     "Next Camera",     "Increase", direction: +1));
+            s_actions.Add(BuildCycleAction("Mirror.Camera.Previous", "Previous Camera", "Decrease", direction: -1));
+        }
+
+        static void RegisterPerSurfaceProvider<TBlock>() where TBlock : class, IMyTerminalBlock
+        {
+            var slider   = CreateZoomSlider();
+            var checkbox = CreateOverrideCameraZoomCheckbox();
+            var listbox  = CreateListbox();
+
+            // Hidden long-valued property — no UI, only here so PB
+            // scripts can GetValueLong / SetValueLong by id.
+            var prop = MyAPIGateway.TerminalControls
+                .CreateProperty<long, TBlock>(CameraIdPropertyId);
+            prop.Getter = b => MirrorStorage.GetCameraId(b, LcdAppTerminalControls.ActiveSurfaceIndex(b));
+            prop.Setter = (b, v) => MirrorStorage.SetCameraId(b, LcdAppTerminalControls.ActiveSurfaceIndex(b), v);
+
+            MyAPIGateway.TerminalControls.AddControl<TBlock>(listbox);
+            MyAPIGateway.TerminalControls.AddControl<TBlock>(checkbox);
+            MyAPIGateway.TerminalControls.AddControl<TBlock>(slider);
+            MyAPIGateway.TerminalControls.AddControl<TBlock>(prop);
+
+            if (s_zoom == null) s_zoom = slider;
         }
 
         public static IReadOnlyList<IMyTerminalAction> GetCustomActions() => s_actions;
+
+        // Force SE's terminal to re-evaluate every control's Visible
+        // predicate. UpdateVisual on a single control only refreshes
+        // its displayed value, not its place in the layout — so a
+        // mod-side storage write that flips a Visible result must
+        // route through the block's PropertiesChanged event for the
+        // slider to appear / disappear without the user closing the
+        // terminal.
+        //
+        // RaisePropertiesChanged is not on the mod whitelist (nor is
+        // Reflection). Workaround: toggle a synced terminal property
+        // twice. Every Sync&lt;&gt; .Value assignment routes through
+        // MyTerminalBlock's SyncType.PropertyChanged handler, which
+        // calls RaisePropertiesChanged internally. ShowInToolbarConfig
+        // is the cleanest carrier — it only affects whether the block
+        // appears in OTHER blocks' toolbar-action picker, so the
+        // user-facing flicker is invisible while the terminal is open.
+        // Net state of ShowInToolbarConfig is unchanged after the
+        // pair of writes; minor cost is two sync packets per click.
+        static void RefreshTerminalLayout(IMyTerminalBlock block)
+        {
+            if (block == null) return;
+            try
+            {
+                bool prev = block.ShowInToolbarConfig;
+                block.ShowInToolbarConfig = !prev;
+                block.ShowInToolbarConfig = prev;
+            }
+            catch { }
+        }
 
         // Active-surface-running-Camera-script gate. Used as the
         // Visible predicate on every Camera control so they appear
@@ -165,6 +243,38 @@ namespace MirrorCameraMod
             return surf.Script == MirrorSession.CameraScriptId;
         }
 
+        // Builds a Next-/Previous-camera toolbar action. Uses
+        // ActiveSurfaceIndex(b) — correct for single-surface text
+        // panels where ActiveSurfaceIndex is always 0. The dispatcher
+        // already gates these actions to SurfaceCount==1.
+        static IMyTerminalAction BuildCycleAction(string id, string name, string icon, int direction)
+        {
+            var action = MyAPIGateway.TerminalControls.CreateAction<IMyTerminalBlock>(id);
+            action.Name = new System.Text.StringBuilder(name);
+            action.Icon = "Textures\\GUI\\Icons\\Actions\\" + icon + ".dds";
+            action.ValidForGroups = false;
+            action.Enabled = b => true;
+            action.Action  = b =>
+            {
+                CameraEnumerator.CycleSelectedCamera(b, LcdAppTerminalControls.ActiveSurfaceIndex(b), direction);
+                RefreshTerminalLayout(b);
+            };
+            action.Writer = (b, sb) =>
+            {
+                long camId = MirrorStorage.GetCameraId(b, LcdAppTerminalControls.ActiveSurfaceIndex(b));
+                if (camId == 0L) { sb.Append("--"); return; }
+                IMyEntity ent;
+                if (!MyAPIGateway.Entities.TryGetEntityById(camId, out ent)) { sb.Append("--"); return; }
+                var cam = ent as IMyCameraBlock;
+                if (cam == null) { sb.Append("--"); return; }
+                string label = string.IsNullOrEmpty(cam.CustomName) ? "Camera" : cam.CustomName;
+                const int maxChars = 10;
+                if (label.Length > maxChars) sb.Append(label, 0, maxChars);
+                else sb.Append(label);
+            };
+            return action;
+        }
+
         static IMyTerminalControlListbox CreateListbox()
         {
             var lb = MyAPIGateway.TerminalControls
@@ -181,22 +291,36 @@ namespace MirrorCameraMod
                 if (b == null || sel == null || sel.Count == 0) return;
                 long id = sel[0].UserData is long ? (long)sel[0].UserData : 0L;
                 MirrorStorage.SetCameraId(b, LcdAppTerminalControls.ActiveSurfaceIndex(b), id);
-                // Force the zoom slider to re-evaluate its Visible
-                // predicate — without this, picking a camera doesn't
-                // make the zoom slider appear until the terminal is
-                // closed and reopened. SE only re-checks Visible on
-                // explicit UpdateVisual or when controls list re-pulls.
-                try { s_zoom?.UpdateVisual(); } catch { }
+                RefreshTerminalLayout(b);
             };
             return lb;
+        }
+
+        static IMyTerminalControlCheckbox CreateOverrideCameraZoomCheckbox()
+        {
+            var cb = MyAPIGateway.TerminalControls
+                .CreateControl<IMyTerminalControlCheckbox, IMyTerminalBlock>(OverrideCameraZoomId);
+            cb.Title   = MyStringId.GetOrCompute("Override Camera Zoom");
+            cb.Tooltip = MyStringId.GetOrCompute(
+                "Override the camera block's zoom for this screen. " +
+                "When selected, the Camera View Zoom slider becomes visible and its value is used at render time.");
+            cb.Visible = IsCameraSurface;
+            cb.Enabled = b => true;
+            cb.Getter  = b => MirrorStorage.GetOverrideCameraZoom(b, LcdAppTerminalControls.ActiveSurfaceIndex(b));
+            cb.Setter  = (b, v) =>
+            {
+                MirrorStorage.SetOverrideCameraZoom(b, LcdAppTerminalControls.ActiveSurfaceIndex(b), v);
+                RefreshTerminalLayout(b);
+            };
+            return cb;
         }
 
         static IMyTerminalControlSlider CreateZoomSlider()
         {
             var sl = MyAPIGateway.TerminalControls
                 .CreateControl<IMyTerminalControlSlider, IMyTerminalBlock>(ZoomId);
-            sl.Title   = MyStringId.GetOrCompute("Camera Zoom");
-            sl.Tooltip = MyStringId.GetOrCompute("Zoom factor for the selected camera.");
+            sl.Title   = MyStringId.GetOrCompute("Camera View Zoom");
+            sl.Tooltip = MyStringId.GetOrCompute("Per-screen zoom override for the selected camera.");
             sl.SetLimits(SurfaceSettings.MinZoom, SurfaceSettings.MaxZoom);
             sl.Getter = b => MirrorStorage.GetZoom(b, LcdAppTerminalControls.ActiveSurfaceIndex(b));
             sl.Setter = (b, v) => MirrorStorage.SetZoom(b, LcdAppTerminalControls.ActiveSurfaceIndex(b), v);
@@ -205,13 +329,18 @@ namespace MirrorCameraMod
                 float v = MirrorStorage.GetZoom(b, LcdAppTerminalControls.ActiveSurfaceIndex(b));
                 sb.Append(v.ToString(ZoomFormat, System.Globalization.CultureInfo.InvariantCulture)).Append(ZoomUnit);
             };
-            // CameraEnumerator.PopulateListbox auto-persists the first
-            // camera on first enumeration when nothing is stored, so by
-            // the time the user can see the zoom slider, GetCameraId is
-            // already non-zero whenever a camera exists. Direct check
-            // suffices — no need for the effective-id fallback here.
-            sl.Visible = b => IsCameraSurface(b)
-                           && MirrorStorage.GetCameraId(b, LcdAppTerminalControls.ActiveSurfaceIndex(b)) != 0L;
+            // Visible only when the user explicitly opted into the
+            // per-screen override AND a camera is selected on a Camera-
+            // app surface. Otherwise hidden; the camera block's own
+            // zoom drives the render.
+            sl.Visible = b =>
+            {
+                if (!IsCameraSurface(b)) return false;
+                int idx = LcdAppTerminalControls.ActiveSurfaceIndex(b);
+                if (MirrorStorage.GetCameraId(b, idx) == 0L) return false;
+                if (!MirrorStorage.GetOverrideCameraZoom(b, idx)) return false;
+                return true;
+            };
             sl.Enabled = b => true;
             return sl;
         }

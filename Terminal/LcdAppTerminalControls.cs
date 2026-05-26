@@ -28,12 +28,15 @@ namespace MirrorCameraMod.Terminal
     ///         the "Script" listbox. Pure list mutation only — no new
     ///         control instances created here, as creating-via-getter
     ///         caused other issues.</item>
-    ///   <item><b>Per-script action gating</b> via
+    ///   <item><b>Camera action gating</b> via
     ///         <see cref="IMyTerminalControls.CustomActionGetter"/>:
-    ///         scripts whose actions only make sense for a specific
-    ///         active app (currently Camera's zoom +/-) hand back a
-    ///         list here; the dispatcher appends it when the active
-    ///         surface runs that script.</item>
+    ///         emits the Camera-app action set on single-surface
+    ///         blocks (i.e. text panels) when their surface is running
+    ///         the Camera script. Multi-surface providers (cockpits,
+    ///         programmable blocks) get no per-screen camera actions —
+    ///         the menu got cluttered in playtest, and the camera
+    ///         block's own zoom slider plus the global Mirror.Camera
+    ///         property cover everything they'd want.</item>
     /// </list>
     /// </summary>
     public sealed class LcdAppTerminalControls
@@ -49,6 +52,7 @@ namespace MirrorCameraMod.Terminal
         static readonly HashSet<string> s_cameraOwnedIds = new HashSet<string>
         {
             CameraScript.ListboxId,
+            CameraScript.OverrideCameraZoomId,
             CameraScript.ZoomId,
         };
 
@@ -112,7 +116,16 @@ namespace MirrorCameraMod.Terminal
 
         static void OnCustomActionGetter(IMyTerminalBlock block, List<IMyTerminalAction> actions)
         {
-            if (GetActiveSurfaceScriptId(block) != MirrorSession.CameraScriptId) return;
+            if (block == null) return;
+            var provider = block as IMyTextSurfaceProvider;
+            // Single-surface only — multi-surface providers (cockpits,
+            // PBs) skip the per-screen camera actions on purpose.
+            if (provider == null || provider.SurfaceCount != 1) return;
+
+            var surf = provider.GetSurface(0);
+            if (surf == null) return;
+            if (surf.ContentType != ContentType.SCRIPT) return;
+            if (surf.Script != MirrorSession.CameraScriptId) return;
 
             var appActions = CameraScript.GetCustomActions();
             if (appActions == null) return;

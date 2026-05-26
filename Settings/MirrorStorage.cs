@@ -68,6 +68,19 @@ namespace MirrorCameraMod.Settings
         public static float GetMirrorAngleZ(IMyEntity entity, int surfaceIdx)
             => SurfaceSettings.ClampMirrorAngle(Get(entity, surfaceIdx).MirrorAngleDegZ);
 
+        public static bool  GetOverrideCameraZoom(IMyEntity entity, int surfaceIdx)
+            => Get(entity, surfaceIdx).OverrideCameraZoom;
+
+        /// <summary>Per-camera zoom factor (1× = camera's MaxFov, no
+        /// zoom; higher values narrow the FoV toward MinFov). Always
+        /// stored on the camera block's surface-0 entry — the camera
+        /// has no surfaces, so 0 is just a stable slot.</summary>
+        public static float GetCameraOwnZoom(IMyEntity cameraEntity)
+        {
+            float v = Get(cameraEntity, 0).CameraOwnZoom;
+            return v < 1f ? 1f : v;   // ground at 1×; no upper cap (per-camera derived)
+        }
+
         /// <summary>Returns the current settings for the given surface.
         /// Never null — defaults are returned if no entry exists.
         /// Server first-touch checks the entity's storage component
@@ -146,6 +159,25 @@ namespace MirrorCameraMod.Settings
             if (cur == null) return;
             cur.MirrorAngleDegZ = SurfaceSettings.ClampMirrorAngle(deg);
             CommitAndPublish(entity, surfaceIdx, cur);
+        }
+
+        public static void SetOverrideCameraZoom(IMyEntity entity, int surfaceIdx, bool v)
+        {
+            var cur = TakeForMutation(entity, surfaceIdx);
+            if (cur == null) return;
+            cur.OverrideCameraZoom = v;
+            CommitAndPublish(entity, surfaceIdx, cur);
+        }
+
+        public static void SetCameraOwnZoom(IMyEntity cameraEntity, float zoom)
+        {
+            var cur = TakeForMutation(cameraEntity, 0);
+            if (cur == null) return;
+            // No upper clamp here — the per-block slider's SetLimits
+            // already caps it to the camera definition's MaxFov/MinFov
+            // ratio. Ground at 1× so the value can't underflow.
+            cur.CameraOwnZoom = zoom < 1f ? 1f : zoom;
+            CommitAndPublish(cameraEntity, 0, cur);
         }
 
         /// <summary>Fetch (or create) the SurfaceSettings instance for a

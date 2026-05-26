@@ -39,6 +39,17 @@ namespace MirrorCameraMod.Settings
         [ProtoMember(4)] public float MirrorAngleDegX;   // yaw   — tilt around screen Up
         [ProtoMember(5)] public float MirrorAngleDegY;   // pitch — tilt around screen Right
         [ProtoMember(6)] public float MirrorAngleDegZ;   // roll  — tilt around screen Normal
+        // Per-screen override flag. False (the default) routes the
+        // renderer to the camera block's CameraOwnZoom and hides the
+        // per-screen Zoom slider. True surfaces the per-screen Zoom
+        // slider and uses its value at render time, overriding the
+        // camera block's setting just for this screen.
+        [ProtoMember(7)] public bool  OverrideCameraZoom = false;
+        // Stored on a camera block's surface-0 entry. Independent of
+        // Zoom (different clamp range — Zoom is 1..20 for LCD view
+        // override, CameraOwnZoom maps to the camera definition's
+        // MaxFov/MinFov ratio which can be much larger).
+        [ProtoMember(8)] public float CameraOwnZoom    = 1.0f;
 
         // ── Clamp helpers ───────────────────────────────────────────────
 
@@ -61,6 +72,8 @@ namespace MirrorCameraMod.Settings
                 MirrorAngleDegX = MirrorAngleDegX,
                 MirrorAngleDegY = MirrorAngleDegY,
                 MirrorAngleDegZ = MirrorAngleDegZ,
+                OverrideCameraZoom = OverrideCameraZoom,
+                CameraOwnZoom   = CameraOwnZoom,
             };
     }
 }
