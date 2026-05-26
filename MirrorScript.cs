@@ -123,8 +123,8 @@ namespace MirrorCameraMod
             MyAPIGateway.TerminalControls.AddControl<IMyTextPanel>(pitch);
 
             var actions = new List<IMyTerminalAction>();
-            AddSliderActions(actions, "Mirror.CameraSource.MirrorYaw",   "Mirror Yaw",   yaw,   step: 5f, reset: 0f);
-            AddSliderActions(actions, "Mirror.CameraSource.MirrorPitch", "Mirror Pitch", pitch, step: 5f, reset: 0f);
+            AddSliderActions(actions, "Mirror.Yaw",   "Yaw",   yaw,   step: 5f, reset: 0f);
+            AddSliderActions(actions, "Mirror.Pitch", "Pitch", pitch, step: 5f, reset: 0f);
             foreach (var a in actions)
                 MyAPIGateway.TerminalControls.AddAction<IMyTextPanel>(a);
         }
@@ -175,10 +175,10 @@ namespace MirrorCameraMod
         // keeps the visible diff to the two function pointers.
         static IMyTerminalControlSlider CreateAngleSlider(bool yaw)
         {
-            var id    = "Mirror.CameraSource" + (yaw ? ".MirrorYaw" : ".MirrorPitch");
-            var title = yaw ? "Mirror Yaw"   : "Mirror Pitch";
-            var tip   = yaw ? "Tilt mirror left/right."
-                            : "Tilt mirror up/down.";
+            var id    = yaw ? "Mirror.Yaw" : "Mirror.Pitch";
+            var title = yaw ? "Yaw"   : "Pitch";
+            var tip   = yaw ? "Tilt the screen left/right."
+                            : "Tilt the screen up/down.";
 
             // We don't know the TBlock at compile time here — the
             // CustomControlGetter callback gives us a generic

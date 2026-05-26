@@ -152,9 +152,9 @@ namespace MirrorCameraMod
             s_actions  = new List<IMyTerminalAction>();
             // Only zoom is action-bindable. Listbox selection is naturally
             // a one-shot UI interaction; no Increase/Decrease semantics.
-            s_actions.Add(BuildSliderAction("Mirror.CameraSource.Zoom.Increase", "Increase Camera Zoom",
+            s_actions.Add(BuildSliderAction("Mirror.Zoom.Increase", "Increase Camera Zoom",
                 "Increase", s_zoom, b => Clamp(s_zoom, b, s_zoom.Getter(b) + 0.5f)));
-            s_actions.Add(BuildSliderAction("Mirror.CameraSource.Zoom.Decrease", "Decrease Camera Zoom",
+            s_actions.Add(BuildSliderAction("Mirror.Zoom.Decrease", "Decrease Camera Zoom",
                 "Decrease", s_zoom, b => Clamp(s_zoom, b, s_zoom.Getter(b) - 0.5f)));
         }
 
@@ -186,7 +186,7 @@ namespace MirrorCameraMod
         static IMyTerminalControlListbox CreateListbox()
         {
             var lb = MyAPIGateway.TerminalControls
-                .CreateControl<IMyTerminalControlListbox, IMyTerminalBlock>("Mirror.CameraSource");
+                .CreateControl<IMyTerminalControlListbox, IMyTerminalBlock>("Mirror.Camera");
             lb.Title   = MyStringId.GetOrCompute("Camera Source");
             lb.Tooltip = MyStringId.GetOrCompute("Camera on this grid to display.");
             lb.Multiselect      = false;
@@ -212,7 +212,7 @@ namespace MirrorCameraMod
         static IMyTerminalControlSlider CreateZoomSlider()
         {
             var sl = MyAPIGateway.TerminalControls
-                .CreateControl<IMyTerminalControlSlider, IMyTerminalBlock>("Mirror.CameraSource.Zoom");
+                .CreateControl<IMyTerminalControlSlider, IMyTerminalBlock>("Mirror.Zoom");
             sl.Title   = MyStringId.GetOrCompute("Camera Zoom");
             sl.Tooltip = MyStringId.GetOrCompute("Zoom factor for the selected camera.");
             sl.SetLimits(SurfaceSettings.MinZoom, SurfaceSettings.MaxZoom);
