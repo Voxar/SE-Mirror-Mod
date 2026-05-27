@@ -338,43 +338,39 @@ namespace MirrorCameraMod
             => PanelRegistry.GetStatus(m_block, ResolveSurfaceIdx())
                ?? "Plugin not loaded";
 
-        // Latch so the surface's WriteText content is set exactly once
-        // per "plugin missing" stretch and cleared exactly once when the
-        // plugin shows up. Without it, every Run() tick would clobber
-        // any text the user typed on the surface after we set the hint.
+        // Latch so the surface's text content is written exactly once
+        // for this TSS instance. The content stays in place as long as
+        // our app owns the surface — toggling the LCD to Text-and-Image
+        // then surfaces our welcome / install-the-plugin explainer
+        // regardless of whether the plugin is currently loaded. Cleared
+        // in Dispose when the TSS is torn down (user switches apps, or
+        // block is removed). Without the latch, every Run() tick would
+        // clobber any text the user typed on the surface.
         bool m_wroteNoPluginText;
 
         void DrawStub()
         {
-            // Global "plugin loaded?" signal — flips true once the
-            // plugin has reported a status for ANY panel. Per-panel
-            // status (used for the subtitle) can be null during the
-            // brief window between TSS startup and the plugin's first
-            // render of that specific panel; that gap was causing the
-            // welcome text to be written and then stick around when
-            // the user switched apps quickly. Using a global signal
-            // avoids that race.
-            bool pluginLoaded = PanelRegistry.PluginEverReported;
-
-            // Surface text-content fallback: when the plugin isn't
-            // loaded, write the long welcome / install-the-plugin
-            // explainer to the surface's text content. The user only
-            // sees it if they switch this surface OFF our app
-            // (TEXT_AND_IMAGE mode) — but when they do, they get a
-            // pointer to where to install the plugin from. One-shot
-            // per transition so subsequent user edits aren't clobbered.
-            if (!pluginLoaded && !m_wroteNoPluginText)
+            // Surface text-content fallback: write the welcome /
+            // install-the-plugin explainer to the surface's text
+            // content once per TSS instance. The user only sees this
+            // if they switch the surface OFF our app (TEXT_AND_IMAGE
+            // mode); they get a pointer to where the plugin lives
+            // whether or not the plugin is loaded right now. Plugin
+            // state is not consulted — the explainer is the only
+            // useful thing to put here while our app owns the surface.
+            // Skip the WriteText if the surface already has our
+            // message (MP sync, prior session, another TSS already
+            // wrote it): WriteText would propagate a redundant edit
+            // through the surface's sync.
+            if (!m_wroteNoPluginText)
             {
-                try { m_surface.WriteText(MirrorSession.NoPluginMessage); } catch { }
+                string current = null;
+                try { current = m_surface.GetText(); } catch { /* defensive */ }
+                if (current != MirrorSession.NoPluginMessage)
+                {
+                    try { m_surface.WriteText(MirrorSession.NoPluginMessage); } catch { }
+                }
                 m_wroteNoPluginText = true;
-            }
-            else if (pluginLoaded && m_wroteNoPluginText)
-            {
-                // Plugin came online. Clear our explainer so a future
-                // app-toggle-off doesn't surface stale "install the
-                // plugin" text long after the plugin loaded.
-                try { m_surface.WriteText(""); } catch { }
-                m_wroteNoPluginText = false;
             }
 
             // Large grid LCDs have plenty of resolution at the
