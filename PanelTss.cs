@@ -68,7 +68,24 @@ namespace MirrorCameraMod
         {
             RegisterForStorageNotify();
             HookEvents();
-            SyncRegistration();
+            // No SyncRegistration() here. The TSS ctor runs during
+            // entity init on worker threads while the session is still
+            // loading — grid block lists are half-populated, MirrorStorage
+            // writes are being applied in parallel, and there's no
+            // consumer of the registration yet because rendering hasn't
+            // started. SyncRegistration runs on the first Run() (i.e.,
+            // first render frame, which can only happen after the world
+            // is loaded enough to render) and via the storage / event
+            // hooks. Net cost: panels appear in the registry one render
+            // frame after construction instead of zero — invisible
+            // because no render is happening before that anyway.
+            //
+            // Earlier shape called SyncRegistration() here to skip the
+            // Update100 backstop's ~1.67s latency, but that reasoning
+            // doesn't apply during world load (nothing's looking at
+            // registry state) and produced "world is corrupted" errors
+            // when GatherCameras (auto-pick path inside
+            // SyncRegistration) raced with concurrent grid block init.
         }
 
         // ── Storage push notification ────────────────────────────────────

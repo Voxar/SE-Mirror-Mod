@@ -135,34 +135,37 @@ namespace MirrorCameraMod.Terminal
 
         // ── Internal ────────────────────────────────────────────────────
 
-        // Reused across all callers to keep GatherCameras allocation-free
-        // in steady state. Mod scripts run single-threaded on the sim
-        // thread, so static reuse is safe — no cross-call concurrency.
-        // Each call Clear()s before populating, so contents never leak
-        // across invocations. The returned list reference is shared:
-        // callers must consume it before the next GatherCameras call.
-        static readonly List<IMyCameraBlock> s_camerasBuf = new List<IMyCameraBlock>();
-        static readonly List<IMyCubeGrid>    s_gridsBuf   = new List<IMyCubeGrid>();
-        static readonly List<IMySlimBlock>   s_slimsBuf   = new List<IMySlimBlock>();
-
+        // Local lists per call. An earlier version reused static buffers
+        // on the assumption that mod scripts run single-threaded on the
+        // sim thread, but entity init during world load fans out across
+        // worker threads — two CameraScript constructors initialising
+        // in parallel raced on the static buffers and threw
+        // "Collection was modified; enumeration operation may not
+        // execute." inside the foreach, which SE surfaced as an
+        // unhandled exception during load and produced the "world is
+        // corrupted" error screen (intermittent: only when two
+        // mirror/camera LCDs initialised on different worker threads
+        // overlapped). Not a hot path — GetEffectiveCameraId short-
+        // circuits once a camera id is stored, so this only runs once
+        // per fresh surface.
         static List<IMyCameraBlock> GatherCameras(IMyCubeBlock block)
         {
-            s_camerasBuf.Clear();
-            if (block == null || block.CubeGrid == null) return s_camerasBuf;
+            var cameras = new List<IMyCameraBlock>();
+            if (block == null || block.CubeGrid == null) return cameras;
 
-            s_gridsBuf.Clear();
-            MyAPIGateway.GridGroups.GetGroup(block.CubeGrid, GridLinkTypeEnum.Mechanical, s_gridsBuf);
+            var grids = new List<IMyCubeGrid>();
+            MyAPIGateway.GridGroups.GetGroup(block.CubeGrid, GridLinkTypeEnum.Mechanical, grids);
 
-            s_slimsBuf.Clear();
-            foreach (var g in s_gridsBuf)
-                g.GetBlocks(s_slimsBuf, b => b.FatBlock is IMyCameraBlock);
+            var slims = new List<IMySlimBlock>();
+            foreach (var g in grids)
+                g.GetBlocks(slims, b => b.FatBlock is IMyCameraBlock);
 
-            foreach (var slim in s_slimsBuf)
+            foreach (var slim in slims)
             {
                 var cam = slim.FatBlock as IMyCameraBlock;
-                if (cam != null) s_camerasBuf.Add(cam);
+                if (cam != null) cameras.Add(cam);
             }
-            return s_camerasBuf;
+            return cameras;
         }
     }
 }

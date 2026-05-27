@@ -45,6 +45,15 @@ namespace MirrorCameraMod.Settings
         static readonly Dictionary<long, SurfaceSettings> s_state =
             new Dictionary<long, SurfaceSettings>();
 
+        // s_stateLock guards every read AND write of s_state. World
+        // load fans entity init across worker threads, and
+        // MirrorSession.OnEntityAdded -> TryLoadEntity -> s_state[...]
+        // = ... fires on those workers. Without this lock, two concurrent
+        // writes can corrupt the Dictionary mid-resize and surface as
+        // a TargetInvocationException that SE reports as "world is
+        // corrupted." Same pattern as PanelTss.s_byKey / s_byLock.
+        static readonly object s_stateLock = new object();
+
         /// <summary>Packed (blockId, surfaceIdx) dictionary key shared
         /// across <see cref="MirrorStorage"/>, <see cref="PanelTss"/>,
         /// and <see cref="Network.SettingsNetwork"/>. surfaceIdx never
@@ -97,14 +106,20 @@ namespace MirrorCameraMod.Settings
             long key = MakeKey(entity.EntityId, surfaceIdx);
 
             SurfaceSettings s;
-            if (s_state.TryGetValue(key, out s)) return s;
+            lock (s_stateLock)
+            {
+                if (s_state.TryGetValue(key, out s)) return s;
+            }
 
             // Server: lazy-load from per-block storage if this is the
             // first read after a save. After this all surfaces on the
             // block are cached; subsequent reads hit the dict directly.
             if (IsServer && TryLoadAllSurfacesFromStorage(entity))
             {
-                if (s_state.TryGetValue(key, out s)) return s;
+                lock (s_stateLock)
+                {
+                    if (s_state.TryGetValue(key, out s)) return s;
+                }
             }
             return new SurfaceSettings();
         }
@@ -211,11 +226,18 @@ namespace MirrorCameraMod.Settings
             long key = MakeKey(entity.EntityId, surfaceIdx);
 
             SurfaceSettings cur;
-            if (s_state.TryGetValue(key, out cur)) return cur;
+            lock (s_stateLock)
+            {
+                if (s_state.TryGetValue(key, out cur)) return cur;
+            }
 
-            if (IsServer && TryLoadAllSurfacesFromStorage(entity)
-                && s_state.TryGetValue(key, out cur))
-                return cur;
+            if (IsServer && TryLoadAllSurfacesFromStorage(entity))
+            {
+                lock (s_stateLock)
+                {
+                    if (s_state.TryGetValue(key, out cur)) return cur;
+                }
+            }
 
             // No existing state — start from defaults.
             return new SurfaceSettings();
@@ -224,7 +246,7 @@ namespace MirrorCameraMod.Settings
         static void CommitAndPublish(IMyEntity entity, int surfaceIdx, SurfaceSettings cur)
         {
             long key = MakeKey(entity.EntityId, surfaceIdx);
-            s_state[key] = cur;
+            lock (s_stateLock) { s_state[key] = cur; }
 
             // Persist on server so the next world load sees the change.
             if (IsServer) PersistToStorage(entity);
@@ -248,7 +270,7 @@ namespace MirrorCameraMod.Settings
         {
             if (data == null) return;
             long key = MakeKey(blockId, surfaceIdx);
-            s_state[key] = data;
+            lock (s_stateLock) { s_state[key] = data; }
 
             if (IsServer)
             {
@@ -265,24 +287,30 @@ namespace MirrorCameraMod.Settings
         /// only invoked on player join, so cost is negligible.</summary>
         internal static List<SurfaceEntry> SnapshotAll()
         {
-            var list = new List<SurfaceEntry>(s_state.Count);
-            foreach (var kv in s_state)
+            lock (s_stateLock)
             {
-                list.Add(new SurfaceEntry
+                var list = new List<SurfaceEntry>(s_state.Count);
+                foreach (var kv in s_state)
                 {
-                    BlockId    = kv.Key >> 4,
-                    SurfaceIdx = (int)(kv.Key & 0xF),
-                    Settings   = kv.Value,
-                });
+                    list.Add(new SurfaceEntry
+                    {
+                        BlockId    = kv.Key >> 4,
+                        SurfaceIdx = (int)(kv.Key & 0xF),
+                        Settings   = kv.Value,
+                    });
+                }
+                return list;
             }
-            return list;
         }
 
         /// <summary>Drop all in-memory state. Called on session unload to
         /// keep session-1 references from bleeding into session-2 — the
         /// mod assembly can't be unloaded in .NET Framework so the
         /// static dict is the only thing that persists between worlds.</summary>
-        public static void Clear() => s_state.Clear();
+        public static void Clear()
+        {
+            lock (s_stateLock) { s_state.Clear(); }
+        }
 
         // ── Persistence (server only) ───────────────────────────────────
 
@@ -320,16 +348,24 @@ namespace MirrorCameraMod.Settings
             }
             catch (Exception ex)
             {
-                MyLog.Default.WriteLine("[MirrorMod] Storage load (block " + entity.EntityId + ") failed: " + ex);
+                // Bad / legacy / corrupt blob: wipe it from the block's
+                // storage so neither this lazy-load nor any future one
+                // sees it again. One log line per entity, then gone.
+                MyLog.Default.WriteLine("[MirrorMod] Storage blob (block " + entity.EntityId + ") unreadable, removing: " + ex.Message);
+                try { entity.Storage.RemoveValue(StorageGuid); }
+                catch { /* defensive: removal isn't critical, the in-memory state will reflect defaults */ }
                 return false;
             }
             if (data == null || data.Surfaces == null || data.Surfaces.Count == 0) return false;
 
             long blockId = entity.EntityId;
-            foreach (var entry in data.Surfaces)
+            lock (s_stateLock)
             {
-                if (entry == null || entry.Settings == null) continue;
-                s_state[MakeKey(blockId, entry.SurfaceIdx)] = entry.Settings;
+                foreach (var entry in data.Surfaces)
+                {
+                    if (entry == null || entry.Settings == null) continue;
+                    s_state[MakeKey(blockId, entry.SurfaceIdx)] = entry.Settings;
+                }
             }
             return true;
         }
@@ -350,14 +386,17 @@ namespace MirrorCameraMod.Settings
                 // the full set for one block; per-block storage blobs
                 // are tiny (a few dozen bytes each).
                 var data = new BlockSurfacesData();
-                foreach (var kv in s_state)
+                lock (s_stateLock)
                 {
-                    if ((kv.Key >> 4) != blockId) continue;
-                    data.Surfaces.Add(new BlockSurfaceEntry
+                    foreach (var kv in s_state)
                     {
-                        SurfaceIdx = (int)(kv.Key & 0xF),
-                        Settings   = kv.Value,
-                    });
+                        if ((kv.Key >> 4) != blockId) continue;
+                        data.Surfaces.Add(new BlockSurfaceEntry
+                        {
+                            SurfaceIdx = (int)(kv.Key & 0xF),
+                            Settings   = kv.Value,
+                        });
+                    }
                 }
 
                 if (data.Surfaces.Count == 0)
