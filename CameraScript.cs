@@ -127,7 +127,29 @@ namespace MirrorCameraMod
 
         // ── Terminal controls ─────────────────────────────────────────
 
-        static bool s_registered;
+        // Per-block-type registration gate. Each entry is one of the
+        // text-surface-host block interfaces (IMyTextPanel,
+        // IMyCockpit, IMyProgrammableBlock). Registration MUST happen
+        // from a binder bound to that specific block type so it fires
+        // AFTER the block's BeforeGameLogicInit has run SE's native
+        // CreateTerminalControls (instance override).
+        //
+        // The earlier shape — registering all three types from any
+        // binder's first fire — races SE's per-instance lazy init:
+        // AddControl<IMyTextPanel> called BEFORE the first MyTextPanel
+        // was constructed populates MyTerminalControlFactory.m_controls
+        // [MyTextPanel] with an empty BlockData, then the first
+        // MyTextPanel block's BeforeGameLogicInit sees
+        // AreControlsCreated<MyTextPanel>()==true and SKIPS its native
+        // CreateTerminalControls — Title textbox / Content combobox
+        // never get added.
+        //
+        // MyTerminalControlFactory.EnsureControlsAreCreated reflects
+        // for STATIC CreateTerminalControls only; MyTextPanel's is an
+        // instance override, so threading TBlock through CreateControl
+        // does NOT pre-trigger it. Per-binder registration is the only
+        // race-free path that doesn't require Harmony.
+        static readonly HashSet<System.Type> s_registeredBlockTypes = new HashSet<System.Type>();
         static List<IMyTerminalAction> s_actions;
         // Held so the listbox / checkbox callbacks can call
         // UpdateVisual on the slider — picking a camera or flipping
@@ -136,27 +158,23 @@ namespace MirrorCameraMod
         // Any one block-type instance suffices.
         static IMyTerminalControlSlider s_zoom;
 
-
-        public static void RegisterTerminalControls()
+        public static void RegisterFor<TBlock>() where TBlock : class, IMyTerminalBlock
         {
-            if (s_registered) return;
-            s_registered = true;
+            if (!s_registeredBlockTypes.Add(typeof(TBlock))) return;
+            RegisterPerSurfaceProvider<TBlock>();
+            EnsureActionsBuilt();
+        }
 
-            // Per-block-type AddControl on every terminal-block type
-            // that hosts a text-surface app. Each gets its own
-            // listbox / slider / checkbox / property instance —
-            // sharing a single instance across types would let the
-            // ItemSelected closure refresh only one type's terminal
-            // at a time.
-            RegisterPerSurfaceProvider<IMyTextPanel>();
-            RegisterPerSurfaceProvider<IMyCockpit>();
-            RegisterPerSurfaceProvider<IMyProgrammableBlock>();
+        static void EnsureActionsBuilt()
+        {
+            if (s_actions != null) return;
+            if (s_zoom == null) return;
 
             // Actions are gated to single-surface blocks (see
-            // LcdAppTerminalControls.OnCustomActionGetter) and use the
-            // generic non-indexed names, since the only block class
-            // emitting them is a text panel where surface index is
-            // always 0.
+            // LcdAppTerminalControls.OnCustomActionGetter). s_zoom may
+            // be the slider from any TBlock that registered first —
+            // safe because its Getter/Setter delegate to MirrorStorage
+            // which takes the block parameter and is type-agnostic.
             s_actions = new List<IMyTerminalAction>();
             s_actions.Add(SliderHelpers.BuildSliderAction(
                 "Mirror.Zoom.Increase", "Increase Camera View Zoom", "Increase",
@@ -264,12 +282,6 @@ namespace MirrorCameraMod
 
         static IMyTerminalControlListbox CreateListbox<TBlock>() where TBlock : class, IMyTerminalBlock
         {
-            // CreateControl<..., TBlock> triggers SE's EnsureControlsAreCreated
-            // for TBlock's concrete type before any AddControl<TBlock> call.
-            // Without that, AddControl below poisons MyTerminalControlFactory's
-            // dict with an empty BlockData, which makes SE skip creating
-            // the block's native controls (Title textbox, Content combobox
-            // on text panels, etc.) — they go missing forever.
             var lb = MyAPIGateway.TerminalControls
                 .CreateControl<IMyTerminalControlListbox, TBlock>(ListboxId);
             lb.Title   = MyStringId.GetOrCompute("Camera Source");
