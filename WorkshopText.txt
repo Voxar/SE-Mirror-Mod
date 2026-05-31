@@ -1,0 +1,76 @@
+[h1]Adjustable LCD Mirrors and Camera views[/h1]
+
+[b]Important:[/b] Mirror and Camera views require a Pulsar plugin to work!
+[olist]
+[*] [url=https://github.com/SpaceGT/Pulsar]Get Pulsar[/url]
+[*] Search and add the plugin "[b]Mirror Mod Renderer[/b]"
+[/olist]
+
+Without the plugin the mod only provides Pitch, Yaw and Roll for LCD Panels,
+and displays a message on any Mirror or Camera.
+Interact with a Mirror or Camera for information on where to get the plugin.
+
+[h2]Getting Started[/h2]
+
+[olist]
+[*] Subscribe to this Mirror Mod.
+[*] Download and install [url=https://github.com/SpaceGT/Pulsar]Pulsar the Space Engineers plugin loader[/url].
+[*] Starting Pulsar [i]([b]Interim.exe[/b] or [b]Legacy.exe[/b])[/i] starts Space Engineers with Plugin support enabled.
+[*] Click the "Plugins" button that has appeared in the main menu.
+[*] Add plugin and find "[b]Mirror Mod Renderer[/b]".
+[*] Press Accept and restart as Pulsar asks you to.
+[*] Add this Mod to your save and load up.
+[*] Find any block that has a screen in the terminal.
+[*] Set Content to Apps.
+[*] Select Mirror.
+[*] Grab a Clang Cola and some dance emotes and admire yourself in first person for the first time!
+[/olist]
+
+[hr][/hr]
+
+[h2]Adjustable LCD[/h2]
+
+[i]The core of this mod/plugin is to add rear view mirrors to rovers, and that requires a few degrees of adjustability.[/i]
+
+Adds Yaw, Pitch and Roll sliders in the terminal for thin LCD Panel blocks, not full block variants or multiple screen blocks, button panels etc. 
+
+The model orientation is modified up to 45 degrees. The collision shapes are not moved so you will clip through larger panels.
+It might be a bit tricky to find where to grind or aim to open the build vision view. You have to aim at the original panel position. 
+
+This is not meant for absolute positioning. Have a look at the "Adjustable LCDs" mod for more flexibility.
+
+[h2]The Mirror LCD app[/h2]
+
+Renders a reflection if you have the plugin installed and active, otherwise just displays "Mirror" and "Plugin not loaded".
+
+No configuration, it's really just a mirror.
+
+Works on any screen. Interacting with LCD panels shows instructions on how to get the plugin.
+
+[h2]The Camera LCD app[/h2]
+
+Renders the view from the selected camera block if you have the plugin installed and active,
+otherwise just displays the selected camera block name and "Plugin not loaded".
+
+Adds terminal controls when the Camera app is selected:
+[list]
+[*] Camera selection listbox
+[*] Per screen Zoom controls
+[/list]
+
+Adds terminal controls to Camera block:
+[list]
+[*] Zoom
+[/list]
+
+Adds LCD panel toolbar actions:
+[list]
+[*] Next camera
+[*] Previous camera
+[*] Increase Zoom
+[*] Decrease Zoom
+[/list]
+
+
+[h2]Additional notes[/h2]
+This mod is not adequately tested in Multiplayer.
