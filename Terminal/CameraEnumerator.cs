@@ -111,13 +111,26 @@ namespace MirrorCameraMod.Terminal
         /// <summary>
         /// Camera id for a surface: the stored selection if non-zero,
         /// otherwise the first available camera on the mechanical group
-        /// — which is also persisted to storage so the next call hits
-        /// the fast path and the per-tick <see cref="GatherCameras"/>
-        /// walk only runs once per surface (or until every camera dies).
-        /// The renderer uses this so a freshly-set Camera app renders
-        /// something immediately, before the user has opened the
-        /// terminal to trigger <see cref="PopulateListbox"/>'s auto-pick.
+        /// as a <b>transient</b> fallback (NOT persisted). The renderer
+        /// uses this so a freshly-set Camera app shows something
+        /// immediately, before the user has opened the terminal to
+        /// trigger <see cref="PopulateListbox"/>'s explicit auto-pick.
         /// </summary>
+        /// <remarks>
+        /// Persisting the auto-pick here used to be an optimisation
+        /// (skip the per-tick <see cref="GatherCameras"/> walk once a
+        /// pick was stored), but it raced against block deserialisation:
+        /// when the TSS first ticked, <c>entity.Storage</c> could still
+        /// be null for a freshly-deserialised block, so the lazy-load
+        /// in <see cref="Settings.MirrorStorage.GetCameraId"/> returned
+        /// 0 even when the on-disk blob held a valid id. The auto-pick
+        /// then wrote <c>cameras[0].EntityId</c> into
+        /// <c>MirrorStorage.s_state</c> keyed by EntityId, and once SE
+        /// finished restoring the real Storage the now-correct blob
+        /// was masked by the polluted cache (subsequent <c>Get</c> hits
+        /// never re-read disk). User-visible: panel reverts to "first
+        /// camera" after every reload.
+        /// </remarks>
         public static long GetEffectiveCameraId(IMyEntity entity, int surfaceIdx)
         {
             long stored = Settings.MirrorStorage.GetCameraId(entity, surfaceIdx);
@@ -128,9 +141,7 @@ namespace MirrorCameraMod.Terminal
             var cameras = GatherCameras(block);
             if (cameras.Count == 0) return 0L;
 
-            long picked = cameras[0].EntityId;
-            Settings.MirrorStorage.SetCameraId(entity, surfaceIdx, picked);
-            return picked;
+            return cameras[0].EntityId;
         }
 
         // ── Internal ────────────────────────────────────────────────────

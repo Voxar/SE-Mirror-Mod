@@ -106,6 +106,7 @@ namespace MirrorCameraMod
             // if any TSS failed to Dispose.
             PanelRegistry.Clear();
             Settings.MirrorStorage.Clear();
+            PanelTss.Clear();
 
             _syncedPlayers.Clear();
             _livePlayers.Clear();

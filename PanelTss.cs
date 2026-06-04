@@ -127,6 +127,23 @@ namespace MirrorCameraMod
             lock (s_byLock) { s_byKey.Remove(key); }
         }
 
+        /// <summary>Drop every entry from <see cref="s_byKey"/>. Called by
+        /// <see cref="MirrorSession.UnloadData"/> for symmetry with
+        /// <see cref="PanelRegistry.Clear"/> and
+        /// <see cref="Settings.MirrorStorage.Clear"/>: session-N TSS
+        /// instances whose <see cref="m_block"/> was closed during
+        /// world unload (without <see cref="Dispose"/> reliably firing)
+        /// would otherwise linger in the dict across world reloads —
+        /// .NET Framework keeps the mod assembly alive between sessions,
+        /// so static dicts survive. Observed in practice: after a
+        /// quit-to-menu + load-world cycle, <c>s_byKey</c> contained
+        /// CameraScript/MirrorScript instances whose <c>m_block.Closed</c>
+        /// was true and whose <c>Storage</c> was null.</summary>
+        public static void Clear()
+        {
+            lock (s_byLock) { s_byKey.Clear(); }
+        }
+
         /// <summary>Called by <see cref="Settings.MirrorStorage"/> after
         /// a debounced write. Looks up the matching live TSS instance
         /// and triggers a re-sync, so the plugin sees the new slider
@@ -307,6 +324,20 @@ namespace MirrorCameraMod
 
         public override void Run()
         {
+            // Self-dispose if our block has been closed underneath us.
+            // SE doesn't reliably fire OnMarkForClose during world unload
+            // so a TSS can outlive its block — observed: instances in
+            // s_byKey whose m_block.Closed was true, holding the s_byKey
+            // slot under the (still-valid) EntityId. PanelTss.Clear()
+            // drops the dict on session unload, but anything SE keeps
+            // ticking still needs this guard.
+            var ent = m_block as VRage.ModAPI.IMyEntity;
+            if (m_block == null || (ent != null && ent.Closed))
+            {
+                Dispose();
+                return;
+            }
+
             base.Run();
             // Re-sync each Update10 in case settings the engine doesn't
             // fire events for (range slider, camera-list selection)
