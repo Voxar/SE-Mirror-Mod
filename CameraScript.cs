@@ -89,7 +89,8 @@ namespace MirrorCameraMod
         /// Reads current camera selection / zoom from
         /// <see cref="MirrorSession"/>'s per-entity storage. Returns
         /// the resolved <see cref="IMyCameraBlock"/> when a camera is
-        /// selected AND its block is working; <c>null</c> otherwise.
+        /// selected, its block is working AND it sits on this panel's
+        /// construct; <c>null</c> otherwise.
         ///
         /// <para>Zoom resolution: if <c>OverrideCameraZoom</c> is true
         /// on this surface, takes the per-screen override
@@ -118,11 +119,37 @@ namespace MirrorCameraMod
             var func = camEnt as Sandbox.ModAPI.IMyFunctionalBlock;
             if (func == null || !func.IsWorking) return null;
 
+            // The stored id stays valid after an undock / grid split, so
+            // the entity lookup alone would keep streaming a camera that
+            // is no longer part of this construct. Re-check membership
+            // every resolve; the id itself is kept so a re-dock restores
+            // the feed without re-selecting.
+            var panelBlock = m_block as VRage.Game.ModAPI.IMyCubeBlock;
+            if (panelBlock == null || !IsOnSameConstruct(panelBlock.CubeGrid, cam.CubeGrid))
+                return null;
+
             if (!string.IsNullOrEmpty(cam.CustomName)) title = cam.CustomName;
             zoom = MirrorStorage.GetOverrideCameraZoom(entity, idx)
                 ? MirrorSession.GetSelectedZoom(entity, idx)
                 : MirrorStorage.GetCameraOwnZoom(camEnt);
             return cam;
+        }
+
+        /// <summary>True when both grids belong to the same logical
+        /// group (rotors, pistons, wheels, connectors) — the set
+        /// <see cref="CameraEnumerator"/> lists from. Compares the
+        /// engine's per-group data object by reference, so no list is
+        /// allocated. <c>IMyCubeGrid.IsSameConstructAs</c> is NOT used:
+        /// it compares the mechanical group and would call a docked
+        /// grid foreign. A grid with no links has no group object;
+        /// then only the grid itself matches.</summary>
+        static bool IsOnSameConstruct(VRage.Game.ModAPI.IMyCubeGrid a, VRage.Game.ModAPI.IMyCubeGrid b)
+        {
+            if (a == null || b == null) return false;
+            if (ReferenceEquals(a, b)) return true;
+            var ga = a.GetGridGroup(VRage.Game.ModAPI.GridLinkTypeEnum.Logical);
+            return ga != null
+                && ReferenceEquals(ga, b.GetGridGroup(VRage.Game.ModAPI.GridLinkTypeEnum.Logical));
         }
 
         // ── Terminal controls ─────────────────────────────────────────
