@@ -56,6 +56,11 @@ namespace MirrorCameraMod.Settings
         // override, CameraOwnZoom maps to the camera definition's
         // MaxFov/MinFov ratio which can be much larger).
         [ProtoMember(8)] public float CameraOwnZoom    = 1.0f;
+        // Last CustomName seen on the CameraId block, written whenever
+        // the camera resolves with a different name. Splash title
+        // fallback for when the block can't be found (destroyed, not in
+        // sync range). Cleared when CameraId changes. Null = unknown.
+        [ProtoMember(9)] public string CameraName;
 
         // ── Clamp helpers ───────────────────────────────────────────────
 
@@ -80,6 +85,7 @@ namespace MirrorCameraMod.Settings
                 MirrorAngleDegZ = MirrorAngleDegZ,
                 OverrideCameraZoom = OverrideCameraZoom,
                 CameraOwnZoom   = CameraOwnZoom,
+                CameraName      = CameraName,
             };
     }
 }

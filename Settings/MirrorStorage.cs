@@ -86,6 +86,11 @@ namespace MirrorCameraMod.Settings
         public static bool  GetOverrideCameraZoom(IMyEntity entity, int surfaceIdx)
             => Get(entity, surfaceIdx).OverrideCameraZoom;
 
+        /// <summary>Last name seen on the selected camera; null when
+        /// unknown. See <see cref="SurfaceSettings.CameraName"/>.</summary>
+        public static string GetCameraName(IMyEntity entity, int surfaceIdx)
+            => Get(entity, surfaceIdx).CameraName;
+
         /// <summary>Per-camera zoom factor (1× = camera's MaxFov, no
         /// zoom; higher values narrow the FoV toward MinFov). Always
         /// stored on the camera block's surface-0 entry — the camera
@@ -140,6 +145,21 @@ namespace MirrorCameraMod.Settings
             if (cur == null) return;
             if (cur.CameraId == id) return;
             cur.CameraId = id;
+            // The remembered name belongs to the previous camera; drop
+            // it so a selection that never resolves can't show it.
+            cur.CameraName = null;
+            CommitAndPublish(entity, surfaceIdx, cur);
+        }
+
+        /// <summary>Remember the selected camera's current name. Called
+        /// on every successful resolve; equality-skip keeps steady state
+        /// write-free, so only renames reach storage and the network.</summary>
+        public static void SetCameraName(IMyEntity entity, int surfaceIdx, string name)
+        {
+            var cur = TakeForMutation(entity, surfaceIdx);
+            if (cur == null) return;
+            if (cur.CameraName == name) return;
+            cur.CameraName = name;
             CommitAndPublish(entity, surfaceIdx, cur);
         }
 

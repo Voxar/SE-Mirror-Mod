@@ -106,6 +106,12 @@ namespace MirrorCameraMod
             var entity = m_block as IMyEntity;
             if (entity == null) return null;
 
+            // Last name seen for the stored id, so the splash still
+            // names the camera when the block can't be found at all
+            // (destroyed while away, outside MP sync range).
+            string storedName = MirrorStorage.GetCameraName(entity, idx);
+            if (!string.IsNullOrEmpty(storedName)) title = storedName;
+
             long camId = MirrorSession.GetEffectiveCameraId(entity, idx);
             if (camId == 0L) return null;
 
@@ -115,6 +121,19 @@ namespace MirrorCameraMod
 
             var cam = camEnt as IMyCameraBlock;
             if (cam == null) return null;
+
+            // Title as soon as the block is known, so the offline splash
+            // (unpowered, disabled, undocked) still names the camera.
+            // Also refresh the remembered name: a rename that happened
+            // while the camera was unresolved lands here the moment it
+            // resolves again. SetCameraName is a no-op when unchanged;
+            // on change it re-enters SyncRegistration once via the
+            // storage notify, where the second call is the no-op.
+            if (!string.IsNullOrEmpty(cam.CustomName))
+            {
+                title = cam.CustomName;
+                MirrorStorage.SetCameraName(entity, idx, cam.CustomName);
+            }
 
             var func = camEnt as Sandbox.ModAPI.IMyFunctionalBlock;
             if (func == null || !func.IsWorking) return null;
@@ -128,7 +147,6 @@ namespace MirrorCameraMod
             if (panelBlock == null || !IsOnSameConstruct(panelBlock.CubeGrid, cam.CubeGrid))
                 return null;
 
-            if (!string.IsNullOrEmpty(cam.CustomName)) title = cam.CustomName;
             zoom = MirrorStorage.GetOverrideCameraZoom(entity, idx)
                 ? MirrorSession.GetSelectedZoom(entity, idx)
                 : MirrorStorage.GetCameraOwnZoom(camEnt);
