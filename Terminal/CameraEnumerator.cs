@@ -10,17 +10,17 @@ using IMyTerminalBlock = Sandbox.ModAPI.IMyTerminalBlock;
 namespace MirrorCameraMod.Terminal
 {
     /// <summary>
-    /// Walks the block's mechanical-grid group to gather every
+    /// Walks the block's logical-grid group to gather every
     /// <see cref="IMyCameraBlock"/> the user can pick from. Shared
     /// between the terminal listbox (which renders the gathered list)
     /// and the Camera TSS (which uses <see cref="GetEffectiveCameraId"/>
     /// to pick a default before the user has touched the listbox).
     ///
-    /// <para>"Mechanical group" means main grid + any subgrid linked by
-    /// pistons, rotors, hinges, suspensions — every block the player
-    /// would consider "part of the same construction" without separately
-    /// docking. Connectors are excluded by using
-    /// <see cref="GridLinkTypeEnum.Mechanical"/>.</para>
+    /// <para>"Logical group" means main grid + any subgrid linked by
+    /// pistons, rotors, hinges, suspensions, plus any grid docked via
+    /// connector — the same set SE calls one construct and shows in a
+    /// single terminal. Selected with
+    /// <see cref="GridLinkTypeEnum.Logical"/>.</para>
     /// </summary>
     public static class CameraEnumerator
     {
@@ -51,7 +51,7 @@ namespace MirrorCameraMod.Terminal
                 items.Add(new MyTerminalControlListBoxItem(
                     MyStringId.GetOrCompute("(no cameras)"),
                     MyStringId.GetOrCompute(
-                        "No camera blocks on this grid or any mechanically-connected subgrid."),
+                        "No camera blocks on this grid, its subgrids or docked grids."),
                     0L));
                 return;
             }
@@ -84,7 +84,7 @@ namespace MirrorCameraMod.Terminal
         /// wrapping at the list ends. Persists via
         /// <see cref="Settings.MirrorStorage.SetCameraId"/> — the next
         /// render tick picks up the new selection. No-op when no
-        /// cameras exist on the mechanical group.</summary>
+        /// cameras exist on the logical group.</summary>
         public static void CycleSelectedCamera(
             IMyTerminalBlock block, int surfaceIdx, int direction)
         {
@@ -110,7 +110,7 @@ namespace MirrorCameraMod.Terminal
 
         /// <summary>
         /// Camera id for a surface: the stored selection if non-zero,
-        /// otherwise the first available camera on the mechanical group
+        /// otherwise the first available camera on the logical group
         /// as a <b>transient</b> fallback (NOT persisted). The renderer
         /// uses this so a freshly-set Camera app shows something
         /// immediately, before the user has opened the terminal to
@@ -165,7 +165,7 @@ namespace MirrorCameraMod.Terminal
             if (block == null || block.CubeGrid == null) return cameras;
 
             var grids = new List<IMyCubeGrid>();
-            MyAPIGateway.GridGroups.GetGroup(block.CubeGrid, GridLinkTypeEnum.Mechanical, grids);
+            MyAPIGateway.GridGroups.GetGroup(block.CubeGrid, GridLinkTypeEnum.Logical, grids);
 
             var slims = new List<IMySlimBlock>();
             foreach (var g in grids)
