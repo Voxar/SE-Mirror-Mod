@@ -69,6 +69,44 @@ namespace MirrorCameraMod.Terminal
         protected override void DoRegister() => CameraScript.RegisterFor<IMyProgrammableBlock>();
     }
 
+    // Generic-LCD hosts: MyFunctionalBlock creates a multi-panel
+    // component for any definition with ScreenAreas, so these blocks
+    // carry text surfaces and can run the Camera app, but each is its
+    // own terminal type and needs its own binder (see class doc).
+
+    [MyEntityComponentDescriptor(typeof(MyObjectBuilder_ButtonPanel), false)]
+    public class CameraControlsBinderButtonPanel : CameraControlsBinder
+    {
+        protected override void DoRegister() => CameraScript.RegisterFor<SpaceEngineers.Game.ModAPI.IMyButtonPanel>();
+    }
+
+    [MyEntityComponentDescriptor(typeof(MyObjectBuilder_MedicalRoom), false)]
+    public class CameraControlsBinderMedicalRoom : CameraControlsBinder
+    {
+        protected override void DoRegister() => CameraScript.RegisterFor<SpaceEngineers.Game.ModAPI.IMyMedicalRoom>();
+    }
+
+    [MyEntityComponentDescriptor(typeof(MyObjectBuilder_StoreBlock), false)]
+    public class CameraControlsBinderStoreBlock : CameraControlsBinder
+    {
+        protected override void DoRegister() => CameraScript.RegisterFor<IMyStoreBlock>();
+    }
+
+    [MyEntityComponentDescriptor(typeof(MyObjectBuilder_TurretControlBlock), false)]
+    public class CameraControlsBinderTurretControlBlock : CameraControlsBinder
+    {
+        protected override void DoRegister() => CameraScript.RegisterFor<SpaceEngineers.Game.ModAPI.IMyTurretControlBlock>();
+    }
+
+    // Only the Console subtype declares screens, but the binder is per
+    // object-builder type; the Visible predicate hides the controls on
+    // projectors without a surface.
+    [MyEntityComponentDescriptor(typeof(MyObjectBuilder_Projector), false)]
+    public class CameraControlsBinderProjector : CameraControlsBinder
+    {
+        protected override void DoRegister() => CameraScript.RegisterFor<IMyProjector>();
+    }
+
     [MyEntityComponentDescriptor(typeof(MyObjectBuilder_CameraBlock), false)]
     public class CameraControlsBinderCameraBlock : CameraControlsBinder
     {
