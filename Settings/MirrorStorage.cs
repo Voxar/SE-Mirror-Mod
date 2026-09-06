@@ -302,6 +302,18 @@ namespace MirrorCameraMod.Settings
             PanelTss.NotifyStorageChanged(blockId, surfaceIdx);
         }
 
+        /// <summary>Current in-memory entry by packed key (see
+        /// <see cref="MakeKey"/>), no lazy load. Used by
+        /// <see cref="Network.SettingsNetwork.FlushPending"/> to send the
+        /// latest state of a surface whose edit was deferred.</summary>
+        internal static bool TryGetByKey(long key, out SurfaceSettings settings)
+        {
+            lock (s_stateLock)
+            {
+                return s_state.TryGetValue(key, out settings);
+            }
+        }
+
         /// <summary>Snapshot of every in-memory entry, used by the server
         /// to satisfy a client's FullSyncRequest. Allocates each call —
         /// only invoked on player join, so cost is negligible.</summary>

@@ -29,10 +29,12 @@ namespace MirrorCameraMod
     ///         (<see cref="GetEffectiveCameraId"/>, range/zoom getters).</item>
     /// </list>
     ///
-    /// <para>Update tick is <c>AfterSimulation</c> so the server-side
-    /// player-connect poll runs once per sim tick. Cheap: one
-    /// <c>GetPlayers</c> call + a hash-set compare per tick when no
-    /// players are connecting; effectively zero work in steady state.</para>
+    /// <para>Update tick is <c>AfterSimulation</c>. On every peer it
+    /// flushes settings edits the network debounce deferred (see
+    /// <see cref="SettingsNetwork.FlushPending"/>); on the server it
+    /// also runs the player-connect poll. Cheap: one <c>GetPlayers</c>
+    /// call + a hash-set compare per tick when no players are
+    /// connecting; effectively zero work in steady state.</para>
     /// </summary>
     [MySessionComponentDescriptor(MyUpdateOrder.AfterSimulation)]
     public class MirrorSession : MySessionComponentBase
@@ -115,6 +117,10 @@ namespace MirrorCameraMod
 
         public override void UpdateAfterSimulation()
         {
+            // All peers: send any settings edit the debounce deferred,
+            // once its window has passed. No-op in steady state.
+            SettingsNetwork.FlushPending();
+
             // Server-only: detect newly-connected players and proactively
             // push the full settings state to them. Belt-and-suspenders
             // with the client-side RequestFullSyncIfClient (which may
