@@ -91,6 +91,11 @@ namespace MirrorCameraMod.Settings
         public static string GetCameraName(IMyEntity entity, int surfaceIdx)
             => Get(entity, surfaceIdx).CameraName;
 
+        /// <summary>Camera Source list mode; see
+        /// <see cref="SurfaceSettings.RemoteCameras"/>.</summary>
+        public static bool  GetRemoteCameras(IMyEntity entity, int surfaceIdx)
+            => Get(entity, surfaceIdx).RemoteCameras;
+
         /// <summary>Per-camera zoom factor (1× = camera's MaxFov, no
         /// zoom; higher values narrow the FoV toward MinFov). Always
         /// stored on the camera block's surface-0 entry — the camera
@@ -219,6 +224,15 @@ namespace MirrorCameraMod.Settings
             if (cur == null) return;
             if (cur.OverrideCameraZoom == v) return;
             cur.OverrideCameraZoom = v;
+            CommitAndPublish(entity, surfaceIdx, cur);
+        }
+
+        public static void SetRemoteCameras(IMyEntity entity, int surfaceIdx, bool v)
+        {
+            var cur = TakeForMutation(entity, surfaceIdx);
+            if (cur == null) return;
+            if (cur.RemoteCameras == v) return;
+            cur.RemoteCameras = v;
             CommitAndPublish(entity, surfaceIdx, cur);
         }
 

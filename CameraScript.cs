@@ -46,6 +46,7 @@ namespace MirrorCameraMod
     [MyTextSurfaceScript(MirrorSession.CameraScriptId, "Camera")]
     public class CameraScript : PanelTss
     {
+        public const string RemoteCamerasId       = "Mirror.RemoteCameras";
         public const string ListboxId             = "Mirror.Camera.List";
         public const string ZoomId                = "Mirror.Zoom";
         public const string OverrideCameraZoomId  = "Mirror.OverrideCameraZoom";
@@ -140,12 +141,21 @@ namespace MirrorCameraMod
 
             // The stored id stays valid after an undock / grid split, so
             // the entity lookup alone would keep streaming a camera that
-            // is no longer part of this construct. Re-check membership
-            // every resolve; the id itself is kept so a re-dock restores
-            // the feed without re-selecting.
+            // is no longer part of this construct. Re-check every
+            // resolve; the id itself is kept so a re-dock restores the
+            // feed without re-selecting. With Remote Cameras on, a
+            // camera off the construct is still fine while the plugin
+            // reports it reachable over the antenna network — so
+            // flipping the checkbox never drops a local selection, and
+            // a remote camera that leaves antenna reach goes offline
+            // within one Update100.
             var panelBlock = m_block as VRage.Game.ModAPI.IMyCubeBlock;
-            if (panelBlock == null || !IsOnSameConstruct(panelBlock.CubeGrid, cam.CubeGrid))
-                return null;
+            if (panelBlock == null) return null;
+            if (!IsOnSameConstruct(panelBlock.CubeGrid, cam.CubeGrid))
+            {
+                if (!MirrorStorage.GetRemoteCameras(entity, idx)) return null;
+                if (!CameraEnumerator.IsReachableRemote(panelBlock, camId)) return null;
+            }
 
             zoom = MirrorStorage.GetOverrideCameraZoom(entity, idx)
                 ? MirrorSession.GetSelectedZoom(entity, idx)
@@ -238,6 +248,7 @@ namespace MirrorCameraMod
             var slider   = CreateZoomSlider<TBlock>();
             var checkbox = CreateOverrideCameraZoomCheckbox<TBlock>();
             var listbox  = CreateListbox<TBlock>();
+            var remote   = CreateRemoteCamerasCheckbox<TBlock>();
 
             // Hidden long-valued property — no UI, only here so PB
             // scripts can GetValueLong / SetValueLong by id.
@@ -246,6 +257,9 @@ namespace MirrorCameraMod
             prop.Getter = b => MirrorStorage.GetCameraId(b, LcdAppTerminalControls.ActiveSurfaceIndex(b));
             prop.Setter = (b, v) => MirrorStorage.SetCameraId(b, LcdAppTerminalControls.ActiveSurfaceIndex(b), v);
 
+            // AddControl order is the relative order the dispatcher
+            // preserves when it relocates these under the Script list.
+            MyAPIGateway.TerminalControls.AddControl<TBlock>(remote);
             MyAPIGateway.TerminalControls.AddControl<TBlock>(listbox);
             MyAPIGateway.TerminalControls.AddControl<TBlock>(checkbox);
             MyAPIGateway.TerminalControls.AddControl<TBlock>(slider);
@@ -330,7 +344,7 @@ namespace MirrorCameraMod
             var lb = MyAPIGateway.TerminalControls
                 .CreateControl<IMyTerminalControlListbox, TBlock>(ListboxId);
             lb.Title   = MyStringId.GetOrCompute("Camera Source");
-            lb.Tooltip = MyStringId.GetOrCompute("Camera on this grid to display.");
+            lb.Tooltip = MyStringId.GetOrCompute("Camera to display.");
             lb.Multiselect      = false;
             lb.VisibleRowsCount = 8;
             lb.Visible = IsCameraSurface;
@@ -339,11 +353,38 @@ namespace MirrorCameraMod
             lb.ItemSelected = (b, sel) =>
             {
                 if (b == null || sel == null || sel.Count == 0) return;
-                long id = sel[0].UserData is long ? (long)sel[0].UserData : 0L;
+                // Camera row: its id. Grid header row: the first camera
+                // under it. Placeholder: 0 (clears a stale selection).
+                // The layout refresh below re-populates the listbox on
+                // the next frame with the stored camera highlighted, so
+                // picking a header visibly moves the selection.
+                object ud = sel[0].UserData;
+                long id = 0L;
+                if (ud is long) id = (long)ud;
+                else if (ud is CameraEnumerator.GridHeader) id = ((CameraEnumerator.GridHeader)ud).FirstCameraId;
                 MirrorStorage.SetCameraId(b, LcdAppTerminalControls.ActiveSurfaceIndex(b), id);
                 RefreshTerminalLayout(b);
             };
             return lb;
+        }
+
+        static IMyTerminalControlCheckbox CreateRemoteCamerasCheckbox<TBlock>() where TBlock : class, IMyTerminalBlock
+        {
+            var cb = MyAPIGateway.TerminalControls
+                .CreateControl<IMyTerminalControlCheckbox, TBlock>(RemoteCamerasId);
+            cb.Title   = MyStringId.GetOrCompute("Remote Cameras");
+            cb.Tooltip = MyStringId.GetOrCompute(
+                "List cameras reachable over the antenna network instead of this construct's cameras.");
+            cb.Visible = IsCameraSurface;
+            cb.Enabled = b => true;
+            cb.Getter  = b => MirrorStorage.GetRemoteCameras(b, LcdAppTerminalControls.ActiveSurfaceIndex(b));
+            cb.Setter  = (b, v) =>
+            {
+                MirrorStorage.SetRemoteCameras(b, LcdAppTerminalControls.ActiveSurfaceIndex(b), v);
+                // Re-populates the Camera Source list on the next frame.
+                RefreshTerminalLayout(b);
+            };
+            return cb;
         }
 
         static IMyTerminalControlCheckbox CreateOverrideCameraZoomCheckbox<TBlock>() where TBlock : class, IMyTerminalBlock

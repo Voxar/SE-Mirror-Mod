@@ -51,6 +51,7 @@ namespace MirrorCameraMod.Terminal
 
         static readonly HashSet<string> s_cameraOwnedIds = new HashSet<string>
         {
+            CameraScript.RemoteCamerasId,
             CameraScript.ListboxId,
             CameraScript.OverrideCameraZoomId,
             CameraScript.ZoomId,

@@ -61,6 +61,11 @@ namespace MirrorCameraMod.Settings
         // fallback for when the block can't be found (destroyed, not in
         // sync range). Cleared when CameraId changes. Null = unknown.
         [ProtoMember(9)] public string CameraName;
+        // Camera Source list shows constructs reachable over the antenna
+        // network instead of this construct's cameras. The selection is
+        // kept either way; see CameraScript.ResolveCameraState for how
+        // it gates validity.
+        [ProtoMember(10)] public bool RemoteCameras = false;
 
         // ── Clamp helpers ───────────────────────────────────────────────
 
@@ -86,6 +91,7 @@ namespace MirrorCameraMod.Settings
                 OverrideCameraZoom = OverrideCameraZoom,
                 CameraOwnZoom   = CameraOwnZoom,
                 CameraName      = CameraName,
+                RemoteCameras   = RemoteCameras,
             };
     }
 }

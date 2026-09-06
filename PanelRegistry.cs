@@ -37,6 +37,19 @@ namespace MirrorCameraMod
 
         public enum PanelMode { Mirror = 0, Camera = 1 }
 
+        /// <summary>
+        /// Optional hook the plugin installs: lists the cameras the given
+        /// panel block can reach over the antenna network, which the mod
+        /// cannot compute itself (nothing antenna-related is on the mod
+        /// whitelist). Called on the game thread with the panel block's
+        /// entity id; the callee appends PAIRS to the list: header grid
+        /// id, then camera id, repeated. The header grid is the
+        /// construct's representative for display. Null while no plugin
+        /// is loaded. Non-breaking addition; <see cref="ApiVersion"/>
+        /// unchanged.
+        /// </summary>
+        public static Action<long, List<long>> RemoteCameraProvider;
+
         public struct PanelInfo
         {
             public IMyTextSurface Surface;
