@@ -46,7 +46,7 @@ namespace MirrorCameraMod
     [MyTextSurfaceScript(MirrorSession.CameraScriptId, "Camera")]
     public class CameraScript : PanelTss
     {
-        public const string RemoteCamerasId       = "Mirror.RemoteCameras";
+        public const string ShowRemoteCamerasId   = "Mirror.ShowRemoteCameras";
         public const string ListboxId             = "Mirror.Camera.List";
         public const string ZoomId                = "Mirror.Zoom";
         public const string OverrideCameraZoomId  = "Mirror.OverrideCameraZoom";
@@ -153,8 +153,8 @@ namespace MirrorCameraMod
             if (panelBlock == null) return null;
             if (!IsOnSameConstruct(panelBlock.CubeGrid, cam.CubeGrid))
             {
-                if (!MirrorStorage.GetRemoteCameras(entity, idx)) return null;
-                if (!CameraEnumerator.IsReachableRemote(panelBlock, camId)) return null;
+                if (!MirrorStorage.GetShowRemoteCameras(entity, idx)) return null;
+                if (!CameraEnumerator.IsCameraRelayedTo(panelBlock, camId)) return null;
             }
 
             zoom = MirrorStorage.GetOverrideCameraZoom(entity, idx)
@@ -171,13 +171,13 @@ namespace MirrorCameraMod
         /// it compares the mechanical group and would call a docked
         /// grid foreign. A grid with no links has no group object;
         /// then only the grid itself matches.</summary>
-        static bool IsOnSameConstruct(VRage.Game.ModAPI.IMyCubeGrid a, VRage.Game.ModAPI.IMyCubeGrid b)
+        static bool IsOnSameConstruct(VRage.Game.ModAPI.IMyCubeGrid panelGrid, VRage.Game.ModAPI.IMyCubeGrid cameraGrid)
         {
-            if (a == null || b == null) return false;
-            if (ReferenceEquals(a, b)) return true;
-            var ga = a.GetGridGroup(VRage.Game.ModAPI.GridLinkTypeEnum.Logical);
-            return ga != null
-                && ReferenceEquals(ga, b.GetGridGroup(VRage.Game.ModAPI.GridLinkTypeEnum.Logical));
+            if (panelGrid == null || cameraGrid == null) return false;
+            if (ReferenceEquals(panelGrid, cameraGrid)) return true;
+            var panelConstruct = panelGrid.GetGridGroup(VRage.Game.ModAPI.GridLinkTypeEnum.Logical);
+            return panelConstruct != null
+                && ReferenceEquals(panelConstruct, cameraGrid.GetGridGroup(VRage.Game.ModAPI.GridLinkTypeEnum.Logical));
         }
 
         // ── Terminal controls ─────────────────────────────────────────
@@ -248,7 +248,7 @@ namespace MirrorCameraMod
             var slider   = CreateZoomSlider<TBlock>();
             var checkbox = CreateOverrideCameraZoomCheckbox<TBlock>();
             var listbox  = CreateListbox<TBlock>();
-            var remote   = CreateRemoteCamerasCheckbox<TBlock>();
+            var showRemoteCamerasCheckbox = CreateShowRemoteCamerasCheckbox<TBlock>();
 
             // Hidden long-valued property — no UI, only here so PB
             // scripts can GetValueLong / SetValueLong by id.
@@ -259,7 +259,7 @@ namespace MirrorCameraMod
 
             // AddControl order is the relative order the dispatcher
             // preserves when it relocates these under the Script list.
-            MyAPIGateway.TerminalControls.AddControl<TBlock>(remote);
+            MyAPIGateway.TerminalControls.AddControl<TBlock>(showRemoteCamerasCheckbox);
             MyAPIGateway.TerminalControls.AddControl<TBlock>(listbox);
             MyAPIGateway.TerminalControls.AddControl<TBlock>(checkbox);
             MyAPIGateway.TerminalControls.AddControl<TBlock>(slider);
@@ -341,50 +341,51 @@ namespace MirrorCameraMod
 
         static IMyTerminalControlListbox CreateListbox<TBlock>() where TBlock : class, IMyTerminalBlock
         {
-            var lb = MyAPIGateway.TerminalControls
+            var listbox = MyAPIGateway.TerminalControls
                 .CreateControl<IMyTerminalControlListbox, TBlock>(ListboxId);
-            lb.Title   = MyStringId.GetOrCompute("Camera Source");
-            lb.Tooltip = MyStringId.GetOrCompute("Camera to display.");
-            lb.Multiselect      = false;
-            lb.VisibleRowsCount = 8;
-            lb.Visible = IsCameraSurface;
-            lb.ListContent  = (b, items, selected) =>
-                CameraEnumerator.PopulateListbox(b, LcdAppTerminalControls.ActiveSurfaceIndex(b), items, selected);
-            lb.ItemSelected = (b, sel) =>
+            listbox.Title   = MyStringId.GetOrCompute("Camera Source");
+            // No list-level tooltip: it would render on top of the
+            // per-item ones while hovering a row.
+            listbox.Tooltip = MyStringId.NullOrEmpty;
+            listbox.Multiselect      = false;
+            listbox.VisibleRowsCount = 8;
+            listbox.Visible = IsCameraSurface;
+            listbox.ListContent  = (block, items, selected) =>
+                CameraEnumerator.PopulateListbox(block, LcdAppTerminalControls.ActiveSurfaceIndex(block), items, selected);
+            listbox.ItemSelected = (block, selectedItems) =>
             {
-                if (b == null || sel == null || sel.Count == 0) return;
+                if (block == null || selectedItems == null || selectedItems.Count == 0) return;
                 // Camera row: its id. Grid header row: the first camera
                 // under it. Placeholder: 0 (clears a stale selection).
                 // The layout refresh below re-populates the listbox on
                 // the next frame with the stored camera highlighted, so
                 // picking a header visibly moves the selection.
-                object ud = sel[0].UserData;
-                long id = 0L;
-                if (ud is long) id = (long)ud;
-                else if (ud is CameraEnumerator.GridHeader) id = ((CameraEnumerator.GridHeader)ud).FirstCameraId;
-                MirrorStorage.SetCameraId(b, LcdAppTerminalControls.ActiveSurfaceIndex(b), id);
-                RefreshTerminalLayout(b);
+                object userData = selectedItems[0].UserData;
+                long cameraId = 0L;
+                if (userData is long) cameraId = (long)userData;
+                else if (userData is CameraEnumerator.GridHeaderRow) cameraId = ((CameraEnumerator.GridHeaderRow)userData).FirstCameraId;
+                MirrorStorage.SetCameraId(block, LcdAppTerminalControls.ActiveSurfaceIndex(block), cameraId);
+                RefreshTerminalLayout(block);
             };
-            return lb;
+            return listbox;
         }
 
-        static IMyTerminalControlCheckbox CreateRemoteCamerasCheckbox<TBlock>() where TBlock : class, IMyTerminalBlock
+        static IMyTerminalControlCheckbox CreateShowRemoteCamerasCheckbox<TBlock>() where TBlock : class, IMyTerminalBlock
         {
-            var cb = MyAPIGateway.TerminalControls
-                .CreateControl<IMyTerminalControlCheckbox, TBlock>(RemoteCamerasId);
-            cb.Title   = MyStringId.GetOrCompute("Remote Cameras");
-            cb.Tooltip = MyStringId.GetOrCompute(
-                "List cameras reachable over the antenna network instead of this construct's cameras.");
-            cb.Visible = IsCameraSurface;
-            cb.Enabled = b => true;
-            cb.Getter  = b => MirrorStorage.GetRemoteCameras(b, LcdAppTerminalControls.ActiveSurfaceIndex(b));
-            cb.Setter  = (b, v) =>
+            var checkbox = MyAPIGateway.TerminalControls
+                .CreateControl<IMyTerminalControlCheckbox, TBlock>(ShowRemoteCamerasId);
+            checkbox.Title   = MyStringId.GetOrCompute("Remote Camera");
+            checkbox.Tooltip = MyStringId.GetOrCompute("Use a camera from the antenna network.");
+            checkbox.Visible = IsCameraSurface;
+            checkbox.Enabled = block => true;
+            checkbox.Getter  = block => MirrorStorage.GetShowRemoteCameras(block, LcdAppTerminalControls.ActiveSurfaceIndex(block));
+            checkbox.Setter  = (block, show) =>
             {
-                MirrorStorage.SetRemoteCameras(b, LcdAppTerminalControls.ActiveSurfaceIndex(b), v);
+                MirrorStorage.SetShowRemoteCameras(block, LcdAppTerminalControls.ActiveSurfaceIndex(block), show);
                 // Re-populates the Camera Source list on the next frame.
-                RefreshTerminalLayout(b);
+                RefreshTerminalLayout(block);
             };
-            return cb;
+            return checkbox;
         }
 
         static IMyTerminalControlCheckbox CreateOverrideCameraZoomCheckbox<TBlock>() where TBlock : class, IMyTerminalBlock
@@ -392,9 +393,7 @@ namespace MirrorCameraMod
             var cb = MyAPIGateway.TerminalControls
                 .CreateControl<IMyTerminalControlCheckbox, TBlock>(OverrideCameraZoomId);
             cb.Title   = MyStringId.GetOrCompute("Override Camera Zoom");
-            cb.Tooltip = MyStringId.GetOrCompute(
-                "Override the camera block's zoom for this screen. " +
-                "When selected, the Camera View Zoom slider becomes visible and its value is used at render time.");
+            cb.Tooltip = MyStringId.GetOrCompute("Use this screen's own zoom.");
             cb.Visible = IsCameraSurface;
             cb.Enabled = b => true;
             cb.Getter  = b => MirrorStorage.GetOverrideCameraZoom(b, LcdAppTerminalControls.ActiveSurfaceIndex(b));

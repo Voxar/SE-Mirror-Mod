@@ -48,9 +48,7 @@ namespace MirrorCameraMod
             var sl = MyAPIGateway.TerminalControls
                 .CreateControl<IMyTerminalControlSlider, IMyCameraBlock>(ZoomId);
             sl.Title   = MyStringId.GetOrCompute("Zoom");
-            sl.Tooltip = MyStringId.GetOrCompute(
-                "Zoom factor for this camera. 1× = the camera's widest field of view; " +
-                "the maximum is derived from the block's FoV range.");
+            sl.Tooltip = MyStringId.GetOrCompute("Zoom for screens showing this camera.");
             sl.SetLimits(_ => 1f, MaxZoomFor);
             sl.Getter = b => MirrorStorage.GetCameraOwnZoom(b);
             sl.Setter = (b, v) =>

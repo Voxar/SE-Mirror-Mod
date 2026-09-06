@@ -70,8 +70,8 @@ namespace MirrorCameraMod.Network
             // Debounce state is keyed by entity id; drop it with the
             // session so a reloaded world starts clean.
             s_lastSend.Clear();
-            s_pending.Clear();
-            s_flushBuf.Clear();
+            s_deferredKeys.Clear();
+            s_readyToSend.Clear();
         }
 
         /// <summary>Clients call after Register to ask the server for
@@ -95,21 +95,21 @@ namespace MirrorCameraMod.Network
         // 100ms window we cap at ~10 msgs/sec per dragged slider.
         //
         // Leading edge sends immediately. A send that lands inside the
-        // window is NOT dropped: its key is parked in s_pending and
-        // FlushPending (every sim tick, from MirrorSession) sends the
-        // CURRENT settings for that key once the window has passed. So
-        // the final value of a drag, and any edit that immediately
-        // follows another on the same surface (SetCameraId → resolve →
-        // SetCameraName runs inside one call stack), always reaches
-        // the server and the other clients. The flush re-reads the
-        // settings rather than keeping the object passed to
-        // SendUpdate, because ApplyRemote can swap the stored instance
-        // in the meantime.
+        // window is NOT dropped: its key is parked in s_deferredKeys
+        // and SendDeferredUpdates (every sim tick, from MirrorSession)
+        // sends the CURRENT settings for that key once the window has
+        // passed. So the final value of a drag, and any edit that
+        // immediately follows another on the same surface (SetCameraId
+        // → resolve → SetCameraName runs inside one call stack), always
+        // reaches the server and the other clients. The deferred send
+        // re-reads the settings rather than keeping the object passed
+        // to SendUpdate, because ApplyRemote can swap the stored
+        // instance in the meantime.
         static readonly TimeSpan SendDebounceWindow = TimeSpan.FromMilliseconds(100);
         static readonly Dictionary<long, DateTime> s_lastSend =
             new Dictionary<long, DateTime>();
-        static readonly HashSet<long> s_pending  = new HashSet<long>();
-        static readonly List<long>    s_flushBuf = new List<long>();
+        static readonly HashSet<long> s_deferredKeys = new HashSet<long>();
+        static readonly List<long>    s_readyToSend  = new List<long>();
 
         static long MakeDebounceKey(long blockId, int surfaceIdx)
             => MirrorStorage.MakeKey(blockId, surfaceIdx);
@@ -117,9 +117,9 @@ namespace MirrorCameraMod.Network
         /// <summary>Called by <see cref="MirrorStorage"/> after an edit
         /// updates the local in-memory state. Sends now when the
         /// surface's debounce window has passed, otherwise defers to
-        /// <see cref="FlushPending"/>. If we're the server, broadcasts
-        /// to other clients; if client, sends to server (which
-        /// broadcasts on its side).</summary>
+        /// <see cref="SendDeferredUpdates"/>. If we're the server,
+        /// broadcasts to other clients; if client, sends to server
+        /// (which broadcasts on its side).</summary>
         public static void SendUpdate(long blockId, int surfaceIdx, SurfaceSettings data)
         {
             if (MyAPIGateway.Multiplayer == null) return;  // single-player offline — no network
@@ -129,45 +129,45 @@ namespace MirrorCameraMod.Network
             DateTime last;
             if (s_lastSend.TryGetValue(key, out last) && now - last < SendDebounceWindow)
             {
-                s_pending.Add(key);
+                s_deferredKeys.Add(key);
                 return;
             }
             s_lastSend[key] = now;
-            s_pending.Remove(key);
-            Dispatch(blockId, surfaceIdx, data);
+            s_deferredKeys.Remove(key);
+            SendNow(blockId, surfaceIdx, data);
         }
 
         /// <summary>Send the current settings of every surface whose
         /// last edit was deferred by the debounce and whose window has
         /// since passed. Called once per sim tick by
         /// <see cref="MirrorSession"/>; cheap no-op when nothing is
-        /// pending, which is the steady state.</summary>
-        public static void FlushPending()
+        /// deferred, which is the steady state.</summary>
+        public static void SendDeferredUpdates()
         {
-            if (s_pending.Count == 0) return;
-            if (MyAPIGateway.Multiplayer == null) { s_pending.Clear(); return; }
+            if (s_deferredKeys.Count == 0) return;
+            if (MyAPIGateway.Multiplayer == null) { s_deferredKeys.Clear(); return; }
 
             DateTime now = DateTime.UtcNow;
-            s_flushBuf.Clear();
-            foreach (long key in s_pending)
+            s_readyToSend.Clear();
+            foreach (long key in s_deferredKeys)
             {
                 DateTime last;
                 if (!s_lastSend.TryGetValue(key, out last) || now - last >= SendDebounceWindow)
-                    s_flushBuf.Add(key);
+                    s_readyToSend.Add(key);
             }
 
-            for (int i = 0; i < s_flushBuf.Count; i++)
+            for (int i = 0; i < s_readyToSend.Count; i++)
             {
-                long key = s_flushBuf[i];
-                s_pending.Remove(key);
-                SurfaceSettings cur;
-                if (!MirrorStorage.TryGetByKey(key, out cur)) continue;
+                long key = s_readyToSend[i];
+                s_deferredKeys.Remove(key);
+                SurfaceSettings current;
+                if (!MirrorStorage.TryGetSettingsByPackedKey(key, out current)) continue;
                 s_lastSend[key] = now;
-                Dispatch(key >> 4, (int)(key & 0xF), cur);
+                SendNow(key >> 4, (int)(key & 0xF), current);
             }
         }
 
-        static void Dispatch(long blockId, int surfaceIdx, SurfaceSettings data)
+        static void SendNow(long blockId, int surfaceIdx, SurfaceSettings data)
         {
             var msg = new NetworkMessage
             {

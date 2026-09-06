@@ -31,7 +31,7 @@ namespace MirrorCameraMod
     ///
     /// <para>Update tick is <c>AfterSimulation</c>. On every peer it
     /// flushes settings edits the network debounce deferred (see
-    /// <see cref="SettingsNetwork.FlushPending"/>); on the server it
+    /// <see cref="SettingsNetwork.SendDeferredUpdates"/>); on the server it
     /// also runs the player-connect poll. Cheap: one <c>GetPlayers</c>
     /// call + a hash-set compare per tick when no players are
     /// connecting; effectively zero work in steady state.</para>
@@ -119,7 +119,7 @@ namespace MirrorCameraMod
         {
             // All peers: send any settings edit the debounce deferred,
             // once its window has passed. No-op in steady state.
-            SettingsNetwork.FlushPending();
+            SettingsNetwork.SendDeferredUpdates();
 
             // Server-only: detect newly-connected players and proactively
             // push the full settings state to them. Belt-and-suspenders

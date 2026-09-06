@@ -65,7 +65,7 @@ namespace MirrorCameraMod.Settings
         // network instead of this construct's cameras. The selection is
         // kept either way; see CameraScript.ResolveCameraState for how
         // it gates validity.
-        [ProtoMember(10)] public bool RemoteCameras = false;
+        [ProtoMember(10)] public bool ShowRemoteCameras = false;
 
         // ── Clamp helpers ───────────────────────────────────────────────
 
@@ -91,7 +91,7 @@ namespace MirrorCameraMod.Settings
                 OverrideCameraZoom = OverrideCameraZoom,
                 CameraOwnZoom   = CameraOwnZoom,
                 CameraName      = CameraName,
-                RemoteCameras   = RemoteCameras,
+                ShowRemoteCameras = ShowRemoteCameras,
             };
     }
 }

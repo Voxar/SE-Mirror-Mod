@@ -91,10 +91,10 @@ namespace MirrorCameraMod.Settings
         public static string GetCameraName(IMyEntity entity, int surfaceIdx)
             => Get(entity, surfaceIdx).CameraName;
 
-        /// <summary>Camera Source list mode; see
-        /// <see cref="SurfaceSettings.RemoteCameras"/>.</summary>
-        public static bool  GetRemoteCameras(IMyEntity entity, int surfaceIdx)
-            => Get(entity, surfaceIdx).RemoteCameras;
+        /// <summary>Camera Source list mode flag; see
+        /// <see cref="SurfaceSettings.ShowRemoteCameras"/>.</summary>
+        public static bool  GetShowRemoteCameras(IMyEntity entity, int surfaceIdx)
+            => Get(entity, surfaceIdx).ShowRemoteCameras;
 
         /// <summary>Per-camera zoom factor (1× = camera's MaxFov, no
         /// zoom; higher values narrow the FoV toward MinFov). Always
@@ -227,12 +227,12 @@ namespace MirrorCameraMod.Settings
             CommitAndPublish(entity, surfaceIdx, cur);
         }
 
-        public static void SetRemoteCameras(IMyEntity entity, int surfaceIdx, bool v)
+        public static void SetShowRemoteCameras(IMyEntity entity, int surfaceIdx, bool show)
         {
             var cur = TakeForMutation(entity, surfaceIdx);
             if (cur == null) return;
-            if (cur.RemoteCameras == v) return;
-            cur.RemoteCameras = v;
+            if (cur.ShowRemoteCameras == show) return;
+            cur.ShowRemoteCameras = show;
             CommitAndPublish(entity, surfaceIdx, cur);
         }
 
@@ -318,13 +318,13 @@ namespace MirrorCameraMod.Settings
 
         /// <summary>Current in-memory entry by packed key (see
         /// <see cref="MakeKey"/>), no lazy load. Used by
-        /// <see cref="Network.SettingsNetwork.FlushPending"/> to send the
-        /// latest state of a surface whose edit was deferred.</summary>
-        internal static bool TryGetByKey(long key, out SurfaceSettings settings)
+        /// <see cref="Network.SettingsNetwork.SendDeferredUpdates"/> to
+        /// send the latest state of a surface whose edit was deferred.</summary>
+        internal static bool TryGetSettingsByPackedKey(long packedKey, out SurfaceSettings settings)
         {
             lock (s_stateLock)
             {
-                return s_state.TryGetValue(key, out settings);
+                return s_state.TryGetValue(packedKey, out settings);
             }
         }
 

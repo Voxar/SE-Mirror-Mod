@@ -44,11 +44,12 @@ namespace MirrorCameraMod
         /// whitelist). Called on the game thread with the panel block's
         /// entity id; the callee appends PAIRS to the list: header grid
         /// id, then camera id, repeated. The header grid is the
-        /// construct's representative for display. Null while no plugin
-        /// is loaded. Non-breaking addition; <see cref="ApiVersion"/>
-        /// unchanged.
+        /// construct's representative for display. Pairs of longs
+        /// because only BCL types cross the mod/plugin boundary. Null
+        /// while no plugin is loaded. Non-breaking addition;
+        /// <see cref="ApiVersion"/> unchanged.
         /// </summary>
-        public static Action<long, List<long>> RemoteCameraProvider;
+        public static Action<long, List<long>> RelayedCameraPairsProvider;
 
         public struct PanelInfo
         {

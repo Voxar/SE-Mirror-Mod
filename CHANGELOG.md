@@ -13,6 +13,13 @@
   re-dock without re-selecting.
 - The camera splash keeps the camera's name while it is offline, and
   remembers the name across reloads for cameras that can't be found.
+- "Remote Camera" checkbox on Camera app screens: use a camera on another
+  construct reachable over the antenna network. The list groups cameras
+  under their grid's name; selecting a grid picks its first camera.
+  Needs the plugin.
+- Fix: in multiplayer, the final value of a slider drag, or a setting
+  changed right after another on the same screen, could be lost.
+- Shorter terminal tooltips; the Camera Source list no longer has any.
 
 ## 2026-06-04
 
